@@ -2,8 +2,10 @@
 
 S3method(sum,inf)
 export("%!in%")
+export(add_r_edges)
 export(covid_abm)
 export(foi_infect)
+export(new_infection)
 export(next_state)
 export(p_mort)
 export(p_sevsymp)

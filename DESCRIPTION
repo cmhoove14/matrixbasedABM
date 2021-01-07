@@ -16,6 +16,7 @@ Suggests:
     ggplot2,
 Depends:
     dplyr,
+    parallel,
     wrswoR,
     data.table,
     dqrng,

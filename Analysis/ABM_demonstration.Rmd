@@ -1,0 +1,358 @@
+---
+title: "Matrix-based ABM"
+author: "Chris Hoover"
+date: "1/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Loads functions for state transitions and infection simulator (see R folder)
+devtools::load_all(here::here())
+
+# Rerun all simulations or load from memory?
+rerun <- TRUE
+```
+
+# Generic population    
+
+## Network structure  
+Individuals can be members of different networks such as work, family/household, school that are constant through time in the absence of interventions. They also participate in random networks that are generated at every time step based on parameter `r.net.prob`. School closures eliminate the school-based network (e.g. all transmission probabilities in school network to 0), increase familial contacts (e.g. within household), and reduce random edge generation from `r.net.prob` to `r.net.prob.sc`. Shelter in place reduces the generation of random edges to `r.net.prob.sip` and also increases household contacts **between household members who are not in essential workforce and therefore either work from home or are laid off (NOT IMPLEMENTED YET)**. The contact matrix is an $N\times N\times T$ array in which each $t$ slice contains a symmetric matrix with entries corresponding to the transmission probability between $i$ and $j$ were one of them to be infectious and the other susceptible.  
+
+## Transmission  
+The transmission model across the network is a modified SEIR that allows for variability in symptom severity by including presymptomatic ($I_P$), asymptomatic ($I_A$), mildly symptomatic ($I_M$), and severely symptomatic ($I_{mh}$, $I_h$) states. This allows infection status to influence behaviors such as test-seeking and self-isolation and variability in transmissibility. Parameters fall under two categories, `t____` parameters draw from a distribution to generate a time until the next event occurs and `p____` parameters return a probability of transitioning to one state or another at each transition (e.g. asymptomatic or not). Probability of being asymptomatic, of being severely symptomatic (eventually hospitalized), and of dying are age-dependent. As an example: `p_asymp` gets a probability that the infected individual will be asymptomatic, this probability is then used in a bernouli trial where success is defined as the individual transitioning to $I_A$ where they then draw from `t_asymp` to determine how long they will remain asymptomatic before recovering. 
+
+Transition times are stored in the `t.til.nxt` matrix and infection status is stored in the `inf.mat` matrix, each with dimensions $N\times T$. Each matrix is updated at the beginning of each model iteration. If an entry in the `t.til.nxt` matrix becomes negative, the function `next_state` is implemented to determine the next state and the time that will be spent in that state. Following these updates to infection status, the network is updated. School closures and shelter in place interventions alter the network as described above. Infection status influences the network by quarantining individuals with symptomatic infection (e.g. $I_m$ or $I_{mh}$ states). These individuals' contacts outside of the household are dissolved, and their household contacts are changed from "H" to "Q" to indicate they are quarantining within the household. **This update facilitates changes in household transmission based on the individual's ability to self-isolate within their home, which is influenced by household size/density, income, and work/school status of other individuals in the home (NOT IMPLEMENTED YET)** Hospitalized ($I_h$) infections do not contribute to transmission (**But could if we make a healthcare worforce type that interacts with hospitalized patients (NOT IMPLEMENTED YET)**) then random edges are built with function `add_r_edges` with probabilities influenced by interventions **and individual heterogeneities (NOT IMPLEMENTED YET)**. Finally, transmission is simulated across the network using function `new_infection` which reduces the contact matrix to only those columns corresonding to infectious individuals, then performs a Bernoulli trial row by row to simulate the probability a contact results in transmission. New infections are then added to `inf.mat` if the Bernoulli trial is successful and the corresponding row is susceptible. For these new infections, `t_latent` is sampled and added to the `t.til.nxt` matrix.  
+
+## Simulations for generic population  
+
+```{r abm_setup}
+# ---------------------------------------------------------
+# SETUP
+# TODO: incorporate testing frequency/testing regime
+# ---------------------------------------------------------
+
+# Number of people, time frame, and time step
+  N     <- 1000     # Total population
+  t.tot <- 100      # Total time for simulation (in days)
+  dt    <- 1        # times step (in days)
+
+# Intervention parameters 
+# Timing
+  t.sc      <- t.tot+1       # Time at which schools are closed
+  t.sip     <- t.tot+1      # Time at which shelter in place occurs
+  t.sc.end  <- t.tot+1  # Time of return to schools
+  t.sip.end <- t.tot+1  # Time of shelter in place lift
+
+# Network parameters
+  trans.hh.sc    <- 1.2      # increase in hh transmission when schools are closed
+  trans.hh.sip   <- 1.3      # increase in hh transmission when sheltered in place
+  r.net.prob     <- 0.5      # Probability of random interaction pre-intervention
+  r.net.prob.sc  <- 0.4      # Probability of random interaction while schools are closed
+  r.net.prob.sip <- 0.05     # Probability of random interaction while in shelter in place
+  r.ind.probs    <- runif(N) # Probability of being included in random edge generation
+  
+# Initial conditions
+  e.seed   <- 1     #Exposed
+  ip.seed  <- 0     #infected pre-symptomatic
+  ia.seed  <- 0     #infected asymptomatic
+  im.seed  <- 0     #infected mildly symptomatic
+  imh.seed <- 0     #infected mildly symptomatic, will become severe
+  ih.seed  <- 0     #infected severely symptomatic
+  d.seed   <- 0     #dead
+  r.seed   <- 0     #removed
+  s.seed   <- N - e.seed - ip.seed - ia.seed - im.seed - imh.seed - ih.seed - d.seed - r.seed
+  
+#TODO: Testing frequency and timing  
+  
+# Parameters and distributions 
+  # Transmission probabilities across different edges
+    trans.hh     <- 0.1
+    trans.work   <- 0.05
+    trans.school <- 0.075
+    trans.other  <- 0.025
+    trans.asymp  <- 0.61  #Reduction in transmission probability from pre/asymptomatics (https://doi.org/10.1101/2020.03.15.20036582)
+      
+# Relationship network matrix and Network matrix through time
+  relation.mat <- matrix(data = 0, ncol = N, nrow = N)
+  net.mat      <- array(data = 0, dim = c(N,N,t.tot/dt))
+  
+# Infection status through time
+  inf.mat <- matrix(data = NA, nrow = N, ncol = t.tot/dt)
+
+# Event times
+  t.til.nxt <- matrix(data = NA, nrow = N, ncol = t.tot/dt)
+
+```
+
+```{r network_setup}
+# ---------------------------------------------------------  
+  
+# NETWORK CHARACTERISTICS (code adapted from http://epirecip.es/epicookbook/chapters/karlsson/r) 
+  
+#TODO: FIll THESE IN WITH EMPIRICAL/SITUATIONAL DATA  
+#TODO: How to inform formation of random edges within network? e.g. heterogeneity between individuals in terms of their random contacts
+  
+# ---------------------------------------------------------
+  
+#Example age distribution data    
+  pop.props        <- c(2.9+2.9,  # 0-10
+                        2.7+2.4,  # 10-20
+                        3.4+3.4,  # 20-30
+                        3.1+3,    # 30-40
+                        3.1+3.5,  # 40-50
+                        3.1+2.9,  # 50-60
+                        2.7+3.2,  # 60-70
+                        2.6+1.9,  # 70-80
+                        1.4+1+0.6+0.1+0) # > 80
+  names(pop.props) <- c(seq(0,70,10), 80)  # 80 is anyone older than 80
+  pop.ages         <- as.numeric(sample(names(pop.props), size = N, replace = TRUE, prob = pop.props))
+
+# example family size proportions
+  num.siblings.props        <- dnbinom(0:10, mu = 1.2, size = 1000)
+  names(num.siblings.props) <- c(0:10)
+  
+# School characteristics 
+  average.class.size.school <- 20
+  
+# Relational vectors to fill  
+  family.membership <- rep(NA, N)
+  work.membership   <- rep(NA, N)
+  school.membership <- rep(NA, N)
+  other.contacts    <- rep(NA, N)
+  
+# Assign relationships to individuals
+# Families (e.g. households)  
+  set.seed(430)  
+  
+  fam.id <- 1
+  
+  while(sum(is.na(family.membership[pop.ages<20]))>0){ # While there are unassigned children
+  # Get number of children in family
+    n.children                                      <- sample(as.numeric(names(num.siblings.props)), 1, prob=num.siblings.props) + 1 
+    
+  # Find unassigned children to assign
+    child.index                                     <- which((pop.ages<20) & is.na(family.membership))[1:n.children]
+    
+  # Find unassigned parents to assign children to
+# NOTE: This ends up being a bit weird because can have parents who are 20-29 and children who are 10-19  
+    
+    parent.index                                    <- which((pop.ages>=20) & (pop.ages<=70) & is.na(family.membership))[1:2]
+    
+  # Assign family id to children and parents
+    family.membership[c(child.index, parent.index)] <- fam.id
+    
+  # Start with next family id
+    fam.id                                          <- fam.id + 1
+  }
+
+# assign work assuming 15 workplaces with skewed distribution of workers per workplace
+  n.working                   <- sum(pop.ages>=20 & pop.ages<=70)
+  is.working                  <- which(pop.ages>=20 & pop.ages<=70)
+  work.membership[is.working] <- sample(1:15, n.working, replace = T, prob = dpois(1:15, lambda = 5))
+
+#assign schools/daycares
+# for 0 to 9 year olds
+  class.id <- 1
+  is.in.school1 <- which(pop.ages==0)
+  family.ids <-  unique(family.membership[is.in.school1])
+  class.size <- 0
+  
+  for(f in family.ids){
+    # Place children from the same family in the same school
+    index                    <- is.in.school1[family.membership[is.in.school1]==f]
+    school.membership[index] <- class.id
+    class.size               <- class.size + length(index)
+    
+    # Once class size reaches limit,start over with new class
+    if(class.size>average.class.size.school){
+      class.size <- 0
+      class.id   <- class.id + 1
+    }
+  }
+
+# for 10 to 19 yrs
+  is.in.school2 <- which(pop.ages==10)
+  family.ids <-  unique(family.membership[is.in.school2])
+  class.size <- 0
+  
+  for(f in family.ids){
+    index                    <- is.in.school2[family.membership[is.in.school2]==f]
+    school.membership[index] <- class.id
+    class.size               <- class.size + length(index)
+    
+    if(class.size>average.class.size.school){
+      class.size <- 0
+      class.id   <- class.id + 1
+    }
+  }
+
+```
+
+```{r gen_network}
+# ---------------------------------------------------------  
+  
+# GENERATE NETWORK
+
+# ---------------------------------------------------------
+    
+# First generate network matrix where cells are transmission probabilities
+# combn function returns all pairwise combinations of individuals in the network membership index   
+  
+# household network
+for(h in unique(family.membership[!is.na(family.membership)])){
+  h.index                            <- which(family.membership==h)
+  relation.mat[t(combn(h.index, 2))] <- "H"
+}
+
+# work network
+for(w in unique(work.membership[!is.na(work.membership)])){
+  w.index <- which(work.membership==w)
+  if(length(w.index)==1){ # If one worker in the workplace, messes this up so just skip
+    NULL
+  } else {
+    relation.mat[t(combn(w.index, 2))] <- "W"
+  }
+}
+
+# school network
+for(s in unique(school.membership[!is.na(school.membership)])){
+  s.index <- which(school.membership==s)
+  relation.mat[t(combn(s.index, 2))] <- "S"
+}
+
+# Make network matrix symmetric
+  relation.mat <- sym_mat(relation.mat)
+
+```
+
+
+```{r test_run, include = FALSE}
+# Initialize infection and waiting time matrices    
+init.infection <- sample(c(rep("E", e.seed),
+                           rep("Ip", ip.seed),
+                           rep("Ia", ia.seed),
+                           rep("Im", im.seed),
+                           rep("Imh", imh.seed),
+                           rep("Ih", ih.seed),
+                           rep("R", r.seed),
+                           rep("S", s.seed)), N, replace = FALSE)
+  
+# Fill infection and state transition matrices based on initial conditions  
+  inf.mat[,1]                          <- init.infection  
+  
+  t.til.nxt[init.infection == "E" ,1]  <- t_latent(e.seed)
+  t.til.nxt[init.infection == "Ip",1]  <- t_presymp(ip.seed) 
+  t.til.nxt[init.infection == "Ia",1]  <- t_asymp(ia.seed)
+  t.til.nxt[init.infection == "Im",1]  <- t_msymp(im.seed)
+  t.til.nxt[init.infection == "Imh",1] <- t_mtosev(imh.seed)
+  t.til.nxt[init.infection == "Ih",1]  <- t_sevsymp(ih.seed)
+
+
+  # Run simulation with function
+  test_sim <- covid_abm(
+    t.tot = t.tot,
+    dt = dt,
+    pop.ages = pop.ages,
+    q.probs = NA,
+    n.probs = r.ind.probs,
+    inf.mat = inf.mat,
+    transition.mat = t.til.nxt,
+    relation.mat = relation.mat
+    
+  )
+  
+
+```
+
+```{r mult_runs}
+if(rerun){
+  n_sims_per_core <- 10
+
+  require(parallel)
+  
+  n.cores <- detectCores()
+  
+  n.reps <- n_sims_per_core*n.cores
+  
+  abmclust <- makeCluster(n.cores)         # Make cluster
+  
+  clusterExport(abmclust, ls())         # Export all objects to cluster
+  
+  clusterEvalQ(abmclust, {
+    devtools::load_all()
+  })
+  
+  abm_sims <- parLapplyLB(abmclust, 1:n.reps, function(i){
+    # Initialize infection and waiting time matrices    
+      init.infection <- sample(c(rep("E", e.seed),
+                                 rep("Ip", ip.seed),
+                                 rep("Ia", ia.seed),
+                                 rep("Im", im.seed),
+                                 rep("Imh", imh.seed),
+                                 rep("Ih", ih.seed),
+                                 rep("R", r.seed),
+                                 rep("S", s.seed)), N, replace = FALSE)
+        
+      # Fill infection and state transition matrices based on initial conditions  
+        inf.mat[,1]                          <- init.infection  
+        
+        t.til.nxt[init.infection == "E" ,1]  <- t_latent(e.seed)
+        t.til.nxt[init.infection == "Ip",1]  <- t_presymp(ip.seed) 
+        t.til.nxt[init.infection == "Ia",1]  <- t_asymp(ia.seed)
+        t.til.nxt[init.infection == "Im",1]  <- t_msymp(im.seed)
+        t.til.nxt[init.infection == "Imh",1] <- t_mtosev(imh.seed)
+        t.til.nxt[init.infection == "Ih",1]  <- t_sevsymp(ih.seed)
+        
+    # Run model
+    abm_sim <- covid_abm(
+      t.tot = t.tot,
+      dt = dt,
+      pop.ages = pop.ages,
+      q.probs = NA,
+      inf.mat = inf.mat,
+      transition.mat = t.til.nxt,
+      relation.mat = relation.mat
+    )
+    
+    abm_out <- as.data.frame(abm_sim)
+    colnames(abm_out <- c("S", "E", "Ip", "Ia", "Im", "Imh", "Ih", "D", "R"))
+    abm_out$iter = i
+    
+    return(abm_out)
+  })
+  
+  stopCluster(abmclust)
+  
+  
+  saveRDS(abm_sims, here::here("data", "mod_sims", "abm_testing_runs.rds"))
+
+} else {
+  abm_sims <- readRDS(here::here("data", "mod_sims", "abm_testing_runs.rds"))
+}
+
+
+```
+
+```{r abm_plots}
+
+```
+
+
+# Congregate living setting  
+
+## Network structure  
+Individuals of two different classes are considered: workers and residents. Workers are subject to a background infection risk corresponding to community infection. Residents are assumed to represent individuals experincing incarceration or residents of extended care facilities and are therefore only at risk from infection from interactions with workers who may be infected in the community. The within-facility network represents interactions between residents and workers as follows: residents are first divided into rooms in which they frequently contact roommates. Residents are then divided into floors/blocks in which they may interact with residents from other rooms **could add another building level?**. Workers are assigned to a particular floor/block **(and building??)** in which they contact residents of that floor/block and other workers on the same floor/block. Contacts between all agents can be simulated using the following parameters:  
+
+* Room size - could be a distribution or an integer, number of residents per room  
+* Floor size - distribution or integer, number of residents per floor  
+* Resident floor contact rate - integer, number of floor-contacts per day between residents of the same floor  
+* Worker floor contact rate - integer, number of floor-contacts per day between workers and residents on the same floor  
+* Transmission probability - double between 0 and 1, probability a contact between infected and susceptible results in infection  
+
+### Interventions affecting the network and transmission  
+*Side Note* These interventions could be conditional on detecting an outbreak which could be simulated as increase in symptomatic agents, threshold of symptomatic agents, or based on some sort of routine testing program  
+* Isolation of anyone experiencing symptoms to their room or to separate room/facility  
+* Residents can be placed on lockdown/quarantine to dissolve connections made on the floor/block and restrict interactions to only roommates  
+* Residents (of a particular floor/block or building) may be vaccinated or depopulated  

@@ -12,7 +12,7 @@ covid_abm(
   n.probs,
   inf.mat,
   transition.mat,
-  net.mat
+  relation.mat
 )
 }
 \arguments{
@@ -30,7 +30,7 @@ covid_abm(
 
 \item{transition.mat}{transition times matrix (time until moving into next state) with column 1 filled with initial times remaining in starting states, N rows, and t.tot/dt columns}
 
-\item{net.mat}{contact network array with dimensions NxNxt.tot/dt such that each slice is a symmetric matrix representing contact between}
+\item{relation.mat}{contact network array with dimensions NxN in which each ij entry represents relationship between agent i and agent j}
 }
 \value{
 Matrix with columns corresponding to each infection state and rows filled with number people in each state at each time over which the simulation was run

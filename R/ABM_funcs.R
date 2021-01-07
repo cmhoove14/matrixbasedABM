@@ -401,6 +401,43 @@ next_state <- function(pre.status, age) {
 
 
 
+#' @title Generate Infections
+#' 
+#' @description Generate new infections given contact matrix and indices of people who are infectious. Restricts the contact matrix (`contact.mat`) to include only those columns corresponding to infectious people based on `inf.ind` Then goes through each row and performs a bernoulli trial based on the transmission probability in each cell Equivalent to a chance of infection for every contact if contact exists (else the cell is 0)Returns a vector of row indicies corresponding to new infections to enter the E compartment Infection multiplier allows alteration of the infection probability, e.g. if contacts are with asymptomatics and want to model reduced infectiousness
+#' 
+#' @param contact.mat matrix representing contact network where entries are transmission probabilities
+#' @param inf.ind indices of individuals who are infectious. Matrix will be subset to these columns to simulate infectious contacts
+#' @param inf.multiplier multiplier to apply to the infection probabilities in the matrix e.g. to simulate reduction in infectiousness among asymptomatic individuals
+#' 
+#' @return vector of indicies of new infections (e.g. people who have moved from S to E)
+#' @export 
+#' 
+
+new_infection <- function(contact.mat, inf.ind, inf.multiplier){
+  #drop=F allows apply to proceed even if length(inf.ind=1) since apply expects a matrix 
+  #across each row, apply a bernoulli trial to all columns corresponding to infectious individuals
+  init.Es <- t(apply(contact.mat[,inf.ind,drop=F], 1, function(e){ 
+    sapply(e, function(beta) rbinom(1, 1, (1-exp(-beta*inf.multiplier)))) 
+  }))
+  # Make sure summing over rows since if inf.ind=1, above returns a 1xN matrix rather than Nx1 rows
+  if(dim(init.Es)[1] == 1){
+    new.Es <- colSums(init.Es)
+  } else {
+    new.Es <- rowSums(init.Es)
+  }
+                   
+  return(new.Es)
+}
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -428,6 +465,53 @@ foi_infect <- function(foi) {
 
 
 
+
+
+
+#' @title Generate random edges in network
+#'  
+#' @description Function to generate random edges on top of network
+#' 
+#' @param start.net Network matrix to add random edges to
+#' @param r.rate Rate at which individuals add random edges (similar to sociality)
+#' @param n.prob individual probabilities of being involved in random edge generation
+#' @param r.trans.rate Numeric indicating probability a random contact between a susceptible and infectious results in a new infection
+#' 
+#' @return Updated contact matrix with random edges added  
+#' @export
+#'        
+
+add_r_edges <- function(start.net, r.rate, n.prob, r.trans.rate){
+  new.net <- start.net
+  #Number of random edges generated
+    n.r.edges <- rbinom(1, nrow(start.net), r.rate)
+  #Allocate random edges to network with individual probability correspondng to n.prob
+    r.pairs <- matrix(sample(nrow(start.net), 2*n.r.edges, replace = TRUE, prob = n.prob), ncol=2)
+  #If edge already exists in another capacity, keep it  
+    pre.edges <- new.net[r.pairs]
+    post.edges <- ifelse(pre.edges == 0, r.trans.rate, pre.edges)
+    new.net[r.pairs] <- post.edges
+
+  #Make symmetrical  
+    new.net <- sym_mat(new.net)
+  
+  return(new.net)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Main ABM function --------------------
 
 #' @title COVID ABM
@@ -441,7 +525,7 @@ foi_infect <- function(foi) {
 #' @param n.probs vector of individual probabilities of being in random edge generation
 #' @param inf.mat infection status matrix with column 1 filled with initial infection status, N rows, and t.tot/dt columns
 #' @param transition.mat transition times matrix (time until moving into next state) with column 1 filled with initial times remaining in starting states, N rows, and t.tot/dt columns
-#' @param net.mat contact network array with dimensions NxNxt.tot/dt such that each slice is a symmetric matrix representing contact between 
+#' @param relation.mat contact network array with dimensions NxN in which each ij entry represents relationship between agent i and agent j   
 #' 
 #' @return Matrix with columns corresponding to each infection state and rows filled with number people in each state at each time over which the simulation was run
 #' @export
@@ -449,25 +533,29 @@ foi_infect <- function(foi) {
 
 covid_abm <- function(t.tot, dt, 
                       pop.ages, q.probs, n.probs,
-                      inf.mat, transition.mat, net.mat){
+                      inf.mat, transition.mat, relation.mat){
+  
+  out.mat <- matrix(NA, nrow = t.tot/dt, ncol = 9)
 
 # Run simulation
   for(t in 2:(t.tot/dt)){
 
 # Advance transition times
-    t.til.nxt[,t] <- t.til.nxt[,(t-1)]-dt
+    transition.mat[,t] <- transition.mat[,(t-1)]-dt
   
   # Advance expired states to next state 
-    nexts <- which(t.til.nxt[,t] < 0) # states that expired
+    nexts <- which(transition.mat[,t] < 0) # states that expired
     if(length(nexts >0)){
-      next.mat <- t(mapply(next_state, inf.mat[nexts,(t-1)], pop.ages[nexts])) # function returns new states and time spent in new state
-      inf.mat[nexts,t] <- next.mat[,1] # update infection status matrix
-      t.til.nxt[nexts,t] <- as.numeric(next.mat[,2]) # update waiting time matrix
+      inf.mat[nexts,t] <- next_state(inf.mat[nexts,(t-1)], pop.ages[nexts]) # function next_state returns new states
+      transition.mat[nexts,t] <- t_til_nxt(inf.mat[nexts,t]) # function t_til_nxt returns time spent in new state 
     }
     
 # Update network based on epi advances and interventions
+  t.net <- relation.mat
   #Quarantine symptomatics   
-  t.net <- quarantine_symptomatics(inf.mat[,t], relation.mat, q.probs)  
+  if(!is.na(q.probs)){
+    t.net <- quarantine_symptomatics(inf.mat[,t], relation.mat, q.probs)  
+  }  
   
   # Eliminate school connections if schools closed and increase hh contacts
     if(t.sc <= (t*dt) & (t*dt) <= t.sc.end){
@@ -496,7 +584,6 @@ covid_abm <- function(t.tot, dt,
     
   #store resulting network in network array
     class(t.net) <- "numeric"
-    net.mat[,,t] <- t.net
 
 #Generate new infections across network 
   # Indices of different types of transmitters
@@ -506,14 +593,14 @@ covid_abm <- function(t.tot, dt,
   # Bernouli trial across all rows times transmitter columns where p(infection)~contact
     # Transmission from pre/asymtpomatic infections with reduction in transmissibility 
       if(length(a.p.transmitters) > 0){
-        new.Es1 <- new_infection(net.mat[,,t], a.p.transmitters, trans.asymp)
+        new.Es1 <- new_infection(t.net, a.p.transmitters, trans.asymp)
       } else {
         new.Es1 <- rep(0, N)
       }
 
     # Transmissions from mild/severely symptomatic individuals
       if(length(m.s.transmitters) > 0){
-        new.Es2 <- new_infection(net.mat[,,t], m.s.transmitters, 1)
+        new.Es2 <- new_infection(t.net, m.s.transmitters, 1)
       } else {
         new.Es2 <- rep(0, N)
       }
@@ -525,16 +612,17 @@ covid_abm <- function(t.tot, dt,
     inf.mat[new.Es,t] <- "E"
     
   # Update transition times matrix for new Es from sample of latent period dist'n
-    t.til.nxt[new.Es,t] <- sapply(1:length(new.Es), t_latent)
+    transition.mat[new.Es,t] <- t_latent(length(new.Es))
   
   # Anyone who hasn't changed infection state remains the same
     sames <- which(is.na(inf.mat[,t]))
     inf.mat[sames,t] <- inf.mat[sames,(t-1)]
       
+  # Store infection state summary at time t  
+    out.mat[t,] <- sum.inf(inf.mat[,t])
   # On to the next one  
   }
-  # Return infection status and network matrices
-  return(list("infection" = inf.mat,
-              "network" = net.mat))     
+  # Return Epi curve
+  return(out.mat)    
 
 }
