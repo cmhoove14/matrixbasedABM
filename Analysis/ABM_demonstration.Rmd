@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 devtools::load_all(here::here())
 
 # Rerun all simulations or load from memory?
-rerun <- TRUE
+rerun <- FALSE
 ```
 
 # Generic population    
@@ -311,6 +311,7 @@ if(rerun){
       dt = dt,
       pop.ages = pop.ages,
       q.probs = NA,
+      n.probs = r.ind.probs,
       inf.mat = inf.mat,
       transition.mat = t.til.nxt,
       relation.mat = relation.mat
