@@ -48,9 +48,9 @@ Transition times are stored in the `t.til.nxt` matrix and infection status is st
 # Network parameters
   trans.hh.sc    <- 1.2      # increase in hh transmission when schools are closed
   trans.hh.sip   <- 1.3      # increase in hh transmission when sheltered in place
-  r.net.prob     <- 0.5      # Probability of random interaction pre-intervention
-  r.net.prob.sc  <- 0.4      # Probability of random interaction while schools are closed
-  r.net.prob.sip <- 0.05     # Probability of random interaction while in shelter in place
+  r.net.prob     <- 0.1      # Probability of random interaction pre-intervention
+  r.net.prob.sc  <- 0.01      # Probability of random interaction while schools are closed
+  r.net.prob.sip <- 0.001     # Probability of random interaction while in shelter in place
   r.ind.probs    <- runif(N) # Probability of being included in random edge generation
   
 # Initial conditions
@@ -318,7 +318,7 @@ if(rerun){
     )
     
     abm_out <- as.data.frame(abm_sim)
-    colnames(abm_out <- c("S", "E", "Ip", "Ia", "Im", "Imh", "Ih", "D", "R"))
+    colnames(abm_out) <- c("S", "E", "Ip", "Ia", "Im", "Imh", "Ih", "D", "R")
     abm_out$iter = i
     
     return(abm_out)
@@ -342,6 +342,7 @@ if(rerun){
 
 
 # Congregate living setting  
+Rather than networks being based on schools, workplaces, and households, can simulate transmission across simpler networks in congregate settings
 
 ## Network structure  
 Individuals of two different classes are considered: workers and residents. Workers are subject to a background infection risk corresponding to community infection. Residents are assumed to represent individuals experincing incarceration or residents of extended care facilities and are therefore only at risk from infection from interactions with workers who may be infected in the community. The within-facility network represents interactions between residents and workers as follows: residents are first divided into rooms in which they frequently contact roommates. Residents are then divided into floors/blocks in which they may interact with residents from other rooms **could add another building level?**. Workers are assigned to a particular floor/block **(and building??)** in which they contact residents of that floor/block and other workers on the same floor/block. Contacts between all agents can be simulated using the following parameters:  
