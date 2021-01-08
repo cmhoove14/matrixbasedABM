@@ -7,9 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 library(tidyverse)
 library(ggplot2)
+library(here)
 
 # Loads functions for state transitions and infection simulator (see R folder)
 devtools::load_all(here::here())
@@ -253,6 +255,22 @@ init.infection <- sample(c(rep("E", e.seed),
   t.til.nxt[init.infection == "Ih",1]  <- t_sevsymp(ih.seed)
 
 
+# Look at network for t1  
+  # Replace contacts with transmission probabilities
+    t1.net <- relation.mat
+    t1.net[which(t1.net == "H")] <- trans.hh
+    t1.net[which(t1.net == "W")] <- trans.work
+    t1.net[which(t1.net == "S")] <- trans.school
+  # Add random network component to starting network
+    t1.net.r <- add_r_edges(t1.net, r.net.prob.sip, r.ind.probs, trans.other)
+
+    class(t1.net.r) <- class(t1.net) <- "numeric"
+  
+# Get dominate eigenvalue representing R0 as laugh-test for transmission probabilities
+  R0 <- max(eigen(t1.net.r)$values)  
+    
+  R0 # Pretty high, but not unheard of and good enough for demonstration
+  
   # Run simulation with function
   test_sim <- covid_abm(
     t.tot = t.tot,
@@ -331,10 +349,10 @@ if(rerun){
   stopCluster(abmclust)
   
   
-  saveRDS(abm_sims, here::here("data", "mod_sims", "abm_testing_runs.rds"))
+  saveRDS(abm_sims, "data/mod_sims/abm_testing_runs.rds")
 
 } else {
-  abm_sims <- readRDS(here::here("data", "mod_sims", "abm_testing_runs.rds"))
+  abm_sims <- readRDS("data/mod_sims/abm_testing_runs.rds")
 }
 
 
@@ -366,13 +384,14 @@ bind_rows(abm_sims) %>%
 Rather than networks being based on schools, workplaces, and households, can simulate transmission across simpler networks in congregate settings
 
 ## Network structure  
-Individuals of two different classes are considered: workers and residents. Workers are subject to a background infection risk corresponding to community infection. Residents are assumed to represent individuals experincing incarceration or residents of extended care facilities and are therefore only at risk from infection from interactions with workers who may be infected in the community. The within-facility network represents interactions between residents and workers as follows: residents are first divided into rooms in which they frequently contact roommates. Residents are then divided into floors/blocks in which they may interact with residents from other rooms **could add another building level?**. Workers are assigned to a particular floor/block **(and building??)** in which they contact residents of that floor/block and other workers on the same floor/block. Contacts between all agents can be simulated using the following parameters:  
+Individuals of two different classes are considered: workers and residents. Workers are subject to a background infection risk corresponding to community infection. Residents are assumed to represent individuals experiencing incarceration or residents of extended care facilities and are therefore only at risk from infection from interactions with workers who may become infected in the community and introduce infection into the facility. The within-facility network represents interactions between residents and workers as follows: residents are first divided into rooms in which they frequently contact roommates. Residents are then divided into floors/blocks in which they may interact with residents from other rooms **could add another building level?**. Workers are assigned to a particular floor/block **(and building?)** in which they contact residents of that floor/block and other workers on the same floor/block. Contacts and resulting transmission between all agents can be simulated using the following parameters:  
 
 * Room size - could be a distribution or an integer, number of residents per room  
 * Floor size - distribution or integer, number of residents per floor  
 * Resident floor contact rate - integer, number of floor-contacts per day between residents of the same floor  
 * Worker floor contact rate - integer, number of floor-contacts per day between workers and residents on the same floor  
 * Transmission probability - double between 0 and 1, probability a contact between infected and susceptible results in infection  
+* Prevalence and contact rate between workers and community - together provide estimate of daily rate of case introduction (but would probably just assume a case introduction at the start for these sims) 
 
 ### Interventions affecting the network and transmission  
 *Side Note* These interventions could be conditional on detecting an outbreak which could be simulated as increase in symptomatic agents, threshold of symptomatic agents, or based on some sort of routine testing program  
