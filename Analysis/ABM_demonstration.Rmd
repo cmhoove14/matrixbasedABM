@@ -8,6 +8,9 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+library(tidyverse)
+library(ggplot2)
+
 # Loads functions for state transitions and infection simulator (see R folder)
 devtools::load_all(here::here())
 
@@ -228,7 +231,7 @@ for(s in unique(school.membership[!is.na(school.membership)])){
 ```
 
 
-```{r test_run, include = FALSE}
+```{r test_run, include = FALSE, eval = FALSE}
 # Initialize infection and waiting time matrices    
 init.infection <- sample(c(rep("E", e.seed),
                            rep("Ip", ip.seed),
@@ -320,6 +323,7 @@ if(rerun){
     abm_out <- as.data.frame(abm_sim)
     colnames(abm_out) <- c("S", "E", "Ip", "Ia", "Im", "Imh", "Ih", "D", "R")
     abm_out$iter = i
+    abm_out$t = 1:t.tot/dt
     
     return(abm_out)
   })
@@ -337,7 +341,24 @@ if(rerun){
 ```
 
 ```{r abm_plots}
+bind_rows(abm_sims) %>% 
+  mutate(I.tot = Ip + Ia + Im + Imh + Ih) %>% #View()
+  ggplot() +
+    theme_bw() +
+    geom_path(aes(x = t, y=I.tot, group = iter),
+              alpha = 0.5, col = "grey50") +
+    labs(x = "time (days)", y = "I", 
+         title = "ABM example sims",
+         subtitle = "1 E at t0")
 
+bind_rows(abm_sims) %>% 
+  filter(t == t.tot/dt) %>% 
+  mutate(attack_rate = (1 - S/N)) %>% 
+  ggplot() +
+    theme_bw() +
+    geom_histogram(aes(attack_rate)) +
+    labs(x = "Attack rate",
+         title = "Dist'n of attack rates")
 ```
 
 
