@@ -380,21 +380,4 @@ bind_rows(abm_sims) %>%
 ```
 
 
-# Congregate living setting  
-Rather than networks being based on schools, workplaces, and households, can simulate transmission across simpler networks in congregate settings
 
-## Network structure  
-Individuals of two different classes are considered: workers and residents. Workers are subject to a background infection risk corresponding to community infection. Residents are assumed to represent individuals experiencing incarceration or residents of extended care facilities and are therefore only at risk from infection from interactions with workers who may become infected in the community and introduce infection into the facility. The within-facility network represents interactions between residents and workers as follows: residents are first divided into rooms in which they frequently contact roommates. Residents are then divided into floors/blocks in which they may interact with residents from other rooms **could add another building level?**. Workers are assigned to a particular floor/block **(and building?)** in which they contact residents of that floor/block and other workers on the same floor/block. Contacts and resulting transmission between all agents can be simulated using the following parameters:  
-
-* Room size - could be a distribution or an integer, number of residents per room  
-* Floor size - distribution or integer, number of residents per floor  
-* Resident floor contact rate - integer, number of floor-contacts per day between residents of the same floor  
-* Worker floor contact rate - integer, number of floor-contacts per day between workers and residents on the same floor  
-* Transmission probability - double between 0 and 1, probability a contact between infected and susceptible results in infection  
-* Prevalence and contact rate between workers and community - together provide estimate of daily rate of case introduction (but would probably just assume a case introduction at the start for these sims) 
-
-### Interventions affecting the network and transmission  
-*Side Note* These interventions could be conditional on detecting an outbreak which could be simulated as increase in symptomatic agents, threshold of symptomatic agents, or based on some sort of routine testing program  
-* Isolation of anyone experiencing symptoms to their room or to separate room/facility  
-* Residents can be placed on lockdown/quarantine to dissolve connections made on the floor/block and restrict interactions to only roommates  
-* Residents (of a particular floor/block or building) may be vaccinated or depopulated  
