@@ -177,9 +177,25 @@ facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == 
 
 # Add case facility names to population dataset then merge datasets by facility and date
 pop_case_merge <- pop_sps %>% 
+  filter(Facility_Type == "Male Institution") %>% 
   left_join(facility_lookup_table, by = c("Facility" = "Facility_pop")) %>% 
-  left_join(uclabb2, by = c("Facility_case" = "Name",
-                            "Report_Date" = ))
+  left_join(uclabb, by = c("Facility_case" = "Name",
+                           "Report_Date" = "Date")) %>% 
+    group_by(Facility) %>% 
+    mutate(
+      new_residents_confirmed  = Residents.Confirmed - lag(Residents.Confirmed),
+      new_staff_confirmed      = Staff.Confirmed - lag(Staff.Confirmed),
+      new_residents_death      = Residents.Deaths - lag(Residents.Deaths),
+      new_staff_death          = Staff.Deaths - lag(Staff.Deaths),
+      new_residents_recovered  = Residents.Recovered - lag(Residents.Recovered),
+      new_staff_recovered      = Staff.Recovered - lag(Staff.Recovered),
+      new_residents_tested     = Residents.Tested - lag(Residents.Tested),
+      new_staff_tested         = Staff.Tested - lag(Staff.Tested),
+      new_residents_quarantine = Residents.Quarantine - lag(Residents.Quarantine),
+      new_staff_quarantine     = Staff.Quarantine - lag(Staff.Quarantine)
+    )
+  
+
 ```
 
 
