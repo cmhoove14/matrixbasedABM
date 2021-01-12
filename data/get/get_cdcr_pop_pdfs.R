@@ -5,7 +5,6 @@ library(tidyverse)
 # Download all pdfs for conversion
 # -----------------
 base_url <- "https://www.cdcr.ca.gov/research/wp-content/uploads/sites/174/" 
-2020/03/Tpop1d200325.pdf
 
 start_date <- as.Date("2020-01-01")
 end_date   <- as.Date("2020-12-31")
@@ -14,8 +13,8 @@ get_dates  <- seq.Date(start_date, end_date, interval)
 
 
 
-# Function to get pdf from url for target date
-  get_pdf <- function(target_date) {
+# Function to get pdf from url for target date. Saves downloaded pdf with same name into target_folder
+  get_pdf <- function(target_date, target_folder) {
     print(target_date)
     
     
@@ -43,12 +42,12 @@ get_dates  <- seq.Date(start_date, end_date, interval)
                       ".pdf")
     
     download.file(get_url,
-                  destfile = paste0(here::here("data", "raw"), "/", basename(get_url)),
+                  destfile = paste0(target_folder, "/", basename(get_url)),
                   mode = "wb")
   }
 
 # Apply function to all target dates
   for(d in 1:length(get_dates)){
-    get_pdf(get_dates[d])
+    get_pdf(get_dates[d], here::here("data", "raw"))
   }
   
