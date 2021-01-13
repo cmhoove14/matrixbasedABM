@@ -54,7 +54,7 @@ pdf_to_table <- function(pdf_file){
     })
     
     colnames(dat2) <- c("Facility", "Capacity", "Design_Capacity", "Percent_Occupied", "Staffed_Capacity")
-    dat2 <- dat1 %>% 
+    dat2 <- dat2 %>% 
       mutate(
         Facility_Type = "Female Institution",
         Report_Date = got_date
