@@ -1,15 +1,19 @@
 # ---------------------------------------
-# Fitting Depopulation SIR model to CA State Prisons data
+# Load and merge CA state prison COVID-19 cases and population
 # Chris Hoover Jan 2021
 # ---------------------------------------
 
-# Load Data -------------------
+library(zoo)
+library(tidyverse)
+
+# Load Case and population data -------------------
+
+# See data/get for scripts to get and process data from online sources
+
 uclabb <- readRDS(here::here("data", "raw", "ucla_law_covid_behind_bars_github_data_1-11-21.rds"))
 pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2020-01-11.rds")) %>% 
   mutate(dplyr::across(.cols = c("Capacity", "Design_Capacity", "Percent_Occupied", "Staffed_Capacity"),
                 .fns = as.numeric))
-
-pop_dates <- unique(pop_sps$Report_Date)
 
 # First generate lookup table to merge the two datasets ----------------
 pop_facs <- unique(pop_sps$Facility)
@@ -45,22 +49,47 @@ facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == 
 facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == "California State Prison Solano (SOL)")] <- "SOL CALIFORNIA STATE PRISON SOLANO"
 facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == "Valley State Prison (VSP)")] <- "VSP VALLEY STATE PRISON"
 
+# Merge datasets -----------------
 # Add case facility names to population dataset then merge datasets by facility and date
-pop_case_merge <- pop_sps %>% 
-  filter(Facility_Type == "Male Institution") %>% 
-  left_join(facility_lookup_table, by = c("Facility" = "Facility_pop")) %>% 
-  left_join(uclabb, by = c("Facility_case" = "Name",
-                           "Report_Date" = "Date")) %>% 
-    group_by(Facility) %>% 
-    mutate(
-      new_residents_confirmed  = Residents.Confirmed - lag(Residents.Confirmed),
-      new_staff_confirmed      = Staff.Confirmed - lag(Staff.Confirmed),
-      new_residents_death      = Residents.Deaths - lag(Residents.Deaths),
-      new_staff_death          = Staff.Deaths - lag(Staff.Deaths),
-      new_residents_recovered  = Residents.Recovered - lag(Residents.Recovered),
-      new_staff_recovered      = Staff.Recovered - lag(Staff.Recovered),
-      new_residents_tested     = Residents.Tested - lag(Residents.Tested),
-      new_staff_tested         = Staff.Tested - lag(Staff.Tested),
-      new_residents_quarantine = Residents.Quarantine - lag(Residents.Quarantine),
-      new_staff_quarantine     = Staff.Quarantine - lag(Staff.Quarantine)
-    )
+pop_case_merge <- uclabb %>% 
+  left_join(facility_lookup_table, by = c("Name" = "Facility_case")) %>% 
+  left_join(pop_sps, by = c("Facility_pop" = "Facility",
+                            "Date" = "Report_Date"))
+
+# final processing to drop superfluous columns, interpolate population, derive smoothed case incidence
+fin_dat <- pop_case_merge %>% 
+  rename(Facility = Facility_pop) %>% 
+  group_by(Facility) %>% 
+  padr::pad() %>% 
+  mutate(
+    Pop_interpolated        = na.approx(Capacity, na.rm = FALSE),
+    new_residents_confirmed = Residents.Confirmed - lag(Residents.Confirmed),
+    new_res_cases_rmv_neg   = if_else(new_residents_confirmed < 0,
+                                      NA_real_,
+                                      new_residents_confirmed),
+    New_Resident_Cases_7day = zoo::rollapply(data = new_res_cases_rmv_neg, 
+                                             width = 7,
+                                             FUN = mean,
+                                             na.rm = T,
+                                             fill = NA,
+                                             align = "right"),
+    new_staff_confirmed     = Staff.Confirmed - lag(Staff.Confirmed),
+    new_staff_cases_rmv_neg = if_else(new_staff_confirmed < 0,
+                                      NA_real_,
+                                      new_staff_confirmed),
+    New_Staff_Cases_7day    = zoo::rollapply(data = new_staff_cases_rmv_neg, 
+                                             width = 7,
+                                             FUN = mean,
+                                             na.rm = T,
+                                             fill = NA,
+                                             align = "right")
+ 
+  ) %>% 
+  dplyr::select("Facility", "Date", "Capacity","Pop_interpolated", "Residents.Confirmed", "New_Resident_Cases_7day","Staff.Confirmed", "New_Staff_Cases_7day",
+                "Design_Capacity", "Percent_Occupied", "Staffed_Capacity", "Facility_Type", 
+                 "Residents.Deaths", "Staff.Deaths", "Residents.Recovered", "Staff.Recovered", 
+                "Residents.Tadmin", "Staff.Tested", "Residents.Negative", "Staff.Negative", "Residents.Pending", "Staff.Pending", 
+                "Residents.Quarantine", "Staff.Quarantine", "Residents.Active", "Residents.Tested",
+                "Address", "Zipcode", "City", "County", "County.FIPS", "Latitude", "Longitude", "source")
+
+saveRDS(fin_dat, here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
