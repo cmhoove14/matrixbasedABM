@@ -1,5 +1,5 @@
 ---
-title: "CVOID19 Epi Dynamics In Prisons"
+title: "COVID19 Epi Dynamics In Prisons"
 author: "Chris Hoover"
 date: "1/11/2021"
 output: html_document
@@ -100,10 +100,22 @@ uclabb_sps %>%
 ```
 
 
-```{r plot_sp_data, fig.width=8, fig.height=7, fig.cap="New confirmed cases among residents estimated as daily change in reported cumuative cases"}
+```{r plot_sp_data, fig.width=8, fig.height=7, fig.cap="New confirmed cases among residents estimated as daily change in reported cumuative cases. Negative values replaced with NA and then 7-day smoothing window applied"}
 uclabb_sps %>% 
+  group_by(Name) %>% 
+  mutate(
+    new_res_cases_rmv_neg = if_else(new_residents_confirmed < 0,
+                                    NA_real_,
+                                    new_residents_confirmed),
+    new_cases_res_smooth = zoo::rollapply(data = new_res_cases_rmv_neg, 
+                                          width = 7,
+                                          FUN = mean,
+                                          na.rm = T,
+                                          fill = NA,
+                                          align = "left")
+  ) %>% #View()
   ggplot() +
-    geom_line(aes(x = Date, y = new_residents_confirmed, col = Name)) +
+    geom_line(aes(x = Date, y = new_cases_res_smooth, col = Name)) +
     theme_bw() +
     theme(legend.position = "bottom",
           legend.text = element_text(size = 6)) +
@@ -136,6 +148,19 @@ pop_sps %>%
 ```
 
 General decline in population, but also evidence of some rapid intentional depopulation in some facilities.
+
+```{r per_capacity, fig.width=8, fig.height=7, fig.cap="% occupied capacity for CA State carceral facilities through 2020"}
+pop_sps %>% 
+  filter(Facility_Type == "Male Institution") %>% 
+  ggplot() +
+    geom_line(aes(x = Report_Date, y = Percent_Occupied, col = Facility)) +
+    theme_bw() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 6)) +
+    guides(col = guide_legend(ncol = 4)) +
+    labs(y = "% Capacity")
+
+```
 
 
 ## Merge Pop and Cases for state facilities  
@@ -198,39 +223,73 @@ pop_case_merge <- pop_sps %>%
 
 ```
 
+## Some points to discuss  
+#### How to estimate influence of depopulation ($\gamma$ parameter in paper) from data  
+* Fitting SIR with variable $N$ and flexible response of $\mathcal{R}_0$ / $\beta$ to $N$  
+
+#### How to define depopulation? 
+* Some facilities have fairly rapid declines in resident population, but still takes place over weeks. Others have gradual decline over the entire year  
+
+#### Population to focus on? 
+* Male residents seems most logical, but also have female residents and staff (at least for some facilities). Interactions between these three groups likely varies by facility  
+
 
 # $\mathcal{R_t}$ Estimation  
+Using the `EpiNow2` package, $\mathcal{R}_t$ can be estimated from daily case counts. Since some of the daily case counts are uncertain (e.g. large negative values), all negative daily cases counts replaced with `NA`
 ```{r epinow2Rt, eval = FALSE, include = FALSE}
 library(EpiNow2)
 
-inc_dat <- sf_test %>% 
-  dplyr::select(Date, pos) %>%
-  padr::pad() %>% 
-  mutate(pos = replace_na(pos, 0)) %>%
-  rename(date=Date,confirm=pos)
+uclaR <- uclabb2 %>% 
+  filter(Name %in% facility_lookup_table$Facility_case) %>% 
+  mutate(
+    new_residents_confirmed = if_else(new_residents_confirmed < 0,
+                                      NA_real_, 
+                                      new_residents_confirmed)
+  )
 
-## Set max allowed delay to 30 days to truncate computation
+est_Rt <- function(facility){
+  
+# Data frame with Date and confirm (number new cases)  
+  inc_dat <- uclaR %>% 
+    filter(Name == facility) %>% 
+    dplyr::select(Date, new_residents_confirmed) %>% 
+    padr::pad() %>% 
+    mutate(pos = replace_na(new_residents_confirmed, 0)) %>% 
+    rename(date = Date,
+           confirm = pos)
+  
+# Reporting delay distributions (time from infection to report)
+# Set max allowed delay to 30 days to truncate computation
 reporting_delay <- EpiNow2::bootstrapped_dist_fit(rlnorm(100, log(3), 0.5),
                                                   max_value = 30)
 
 
+# Generation time distribution taken from package
 generation_time <- list(mean = EpiNow2::generation_times[1, ]$mean,
                         mean_sd = EpiNow2::generation_times[1, ]$mean_sd,
                         sd = EpiNow2::generation_times[1, ]$sd,
                         sd_sd = EpiNow2::generation_times[1, ]$sd_sd,
                         max = 30)
 
+# Incubation time distribution taken from package
 incubation_period <- list(mean = EpiNow2::incubation_periods[1, ]$mean,
                           mean_sd = EpiNow2::incubation_periods[1, ]$mean_sd,
                           sd = EpiNow2::incubation_periods[1, ]$sd,
                           sd_sd = EpiNow2::incubation_periods[1, ]$sd_sd,
                           max = 30)
 
-
+# Generate estimates
   estimates <- EpiNow2::epinow(reported_cases = inc_dat, 
                                generation_time = generation_time,
                                delays = list(incubation_period, reporting_delay),
                                horizon = 7, samples = 4000)
+  
+# Return summarised esimates
+  return(estimates$estimates$summarised)
+}
+
+
+test_Rt <- est_Rt(facility_lookup_table$Facility_case[1])
 
 
 
