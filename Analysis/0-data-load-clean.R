@@ -50,11 +50,23 @@ facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == 
 facility_lookup_table$Facility_case[which(facility_lookup_table$Facility_pop == "Valley State Prison (VSP)")] <- "VSP VALLEY STATE PRISON"
 
 # Merge datasets -----------------
+#Folsom State Prison has both male and female populationsin the population dataset, but the cases are reported facility wide. Unclear whether the case reporting is for both facilities or only for the male facility, but will assume they're facility-wide and therefore just merge the population data for Folsom
+pop_sps2 <- pop_sps %>% 
+  group_by(Facility, Report_Date) %>% 
+  summarise(
+    across(
+      .cols = c("Capacity", "Design_Capacity", "Staffed_Capacity"), .fns = sum
+    )
+  ) %>% 
+  mutate(
+    Percent_Occupied = Capacity/Design_Capacity*100
+  )
+
 # Add case facility names to population dataset then merge datasets by facility and date
 pop_case_merge <- uclabb %>% 
   left_join(facility_lookup_table, by = c("Name" = "Facility_case")) %>% 
-  left_join(pop_sps, by = c("Facility_pop" = "Facility",
-                            "Date" = "Report_Date"))
+  left_join(pop_sps2, by = c("Facility_pop" = "Facility",
+                             "Date" = "Report_Date"))
 
 # Function to clean, interpolate, and smooth vector of values. Used below to convert cumulative counts into incident counts, skipping over data errors that present as negative changes and then smoothing 
 clean_interpolate <- function(vec){
@@ -77,9 +89,9 @@ fin_dat <- pop_case_merge %>%
   padr::pad() %>%
   mutate(
     Resident_Outbreak_Start = min(Date[which(Residents.Confirmed > 0)], na.rm = T),
-    Resident_Outbreak_Day = Date - Resident_Outbreak_Start,
+    Resident_Outbreak_Day = as.numeric(Date - Resident_Outbreak_Start),
     Staff_Outbreak_Start = min(Date[which(Staff.Confirmed > 0)], na.rm = T),
-    Staff_Outbreak_Day = Date - Staff_Outbreak_Start,
+    Staff_Outbreak_Day = as.numeric(Date - Staff_Outbreak_Start),
     Pop_interpolated        = na.approx(Capacity, na.rm = FALSE),
     Residents_Confirmed2    = clean_interpolate(Residents.Confirmed),
     New_Resident_Cases_7day = zoo::rollapply(data = Residents_Confirmed2 - lag(Residents_Confirmed2), 
@@ -143,7 +155,7 @@ fin_dat <- pop_case_merge %>%
                 "Staff.Recovered", "Staff_Recovered2", "Staff_Recovered_7day",
                 "Staff_Active_7day",
                 "Staff.Deaths", "Staff_Deaths_7day",
-                "Design_Capacity", "Percent_Occupied", "Staffed_Capacity", "Facility_Type", 
+                "Design_Capacity", "Percent_Occupied", "Staffed_Capacity", 
                 "Residents.Tadmin", "Staff.Tested", "Residents.Negative", "Staff.Negative", "Residents.Pending", "Staff.Pending", 
                 "Residents.Quarantine", "Staff.Quarantine", "Residents.Active", "Residents.Tested",
                 "Address", "Zipcode", "City", "County", "County.FIPS", "Latitude", "Longitude", "source")
