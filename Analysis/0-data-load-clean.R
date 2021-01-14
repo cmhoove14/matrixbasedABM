@@ -56,38 +56,94 @@ pop_case_merge <- uclabb %>%
   left_join(pop_sps, by = c("Facility_pop" = "Facility",
                             "Date" = "Report_Date"))
 
-# final processing to drop superfluous columns, interpolate population, derive smoothed case incidence
-fin_dat <- pop_case_merge %>% 
-  rename(Facility = Facility_pop) %>% 
-  group_by(Facility) %>% 
-  padr::pad() %>% 
+# Function to clean, interpolate, and smooth vector of values. Used below to convert cumulative counts into incident counts, skipping over data errors that present as negative changes and then smoothing 
+clean_interpolate <- function(vec){
+  # Find values that result in negative changes and replace with NA
+  diff_vec <- c(NA, diff(vec))
+  vec2 <- vec
+  vec2[is.na(vec)] <- NA
+  vec2[diff_vec < 0] <- NA
+  
+  # Fill in NAs via interpolation then get new differences and smooth
+  vec_interp <- na.approx(vec2, na.rm = FALSE)
+  
+  return(vec_interp)
+}
+
+# final processing to drop superfluous columns, interpolate population, derive smoothed and corrected case incidence
+fin_dat <- pop_case_merge %>%
+  rename(Facility = Facility_pop) %>%
+  group_by(Facility) %>%
+  padr::pad() %>%
   mutate(
+    Resident_Outbreak_Start = min(Date[which(Residents.Confirmed > 0)], na.rm = T),
+    Resident_Outbreak_Day = Date - Resident_Outbreak_Start,
+    Staff_Outbreak_Start = min(Date[which(Staff.Confirmed > 0)], na.rm = T),
+    Staff_Outbreak_Day = Date - Staff_Outbreak_Start,
     Pop_interpolated        = na.approx(Capacity, na.rm = FALSE),
-    new_residents_confirmed = Residents.Confirmed - lag(Residents.Confirmed),
-    new_res_cases_rmv_neg   = if_else(new_residents_confirmed < 0,
-                                      NA_real_,
-                                      new_residents_confirmed),
-    New_Resident_Cases_7day = zoo::rollapply(data = new_res_cases_rmv_neg, 
+    Residents_Confirmed2    = clean_interpolate(Residents.Confirmed),
+    New_Resident_Cases_7day = zoo::rollapply(data = Residents_Confirmed2 - lag(Residents_Confirmed2), 
                                              width = 7,
                                              FUN = mean,
                                              na.rm = T,
                                              fill = NA,
                                              align = "right"),
-    new_staff_confirmed     = Staff.Confirmed - lag(Staff.Confirmed),
-    new_staff_cases_rmv_neg = if_else(new_staff_confirmed < 0,
-                                      NA_real_,
-                                      new_staff_confirmed),
-    New_Staff_Cases_7day    = zoo::rollapply(data = new_staff_cases_rmv_neg, 
+    Residents_Recovered2 = clean_interpolate(Residents.Recovered),
+    Residents_Recovered_7day = zoo::rollapply(na.approx(Residents.Recovered, na.rm = F),
                                              width = 7,
                                              FUN = mean,
                                              na.rm = T,
                                              fill = NA,
-                                             align = "right")
- 
+                                             align = "right"),
+    Residents_Active_7day = zoo::rollapply(Residents_Confirmed2 - Residents_Recovered2,
+                                           width = 7,
+                                           FUN = mean,
+                                           na.rm = T,
+                                           fill = NA,
+                                           align = "right"),
+    Residents_Deaths_7day = zoo::rollapply(na.approx(Residents.Deaths, na.rm = F),
+                                           width = 7,
+                                           FUN = mean,
+                                           na.rm = T,
+                                           fill = NA,
+                                           align = "right"),
+    Staff_Confirmed2    = clean_interpolate(Staff.Confirmed),
+    New_Staff_Cases_7day = zoo::rollapply(data = Staff_Confirmed2 - lag(Staff_Confirmed2), 
+                                             width = 7,
+                                             FUN = mean,
+                                             na.rm = T,
+                                             fill = NA,
+                                             align = "right"),
+    Staff_Recovered2 = clean_interpolate(Staff.Recovered),
+    Staff_Recovered_7day = zoo::rollapply(na.approx(Staff.Recovered, na.rm = F),
+                                              width = 7,
+                                              FUN = mean,
+                                              na.rm = T,
+                                              fill = NA,
+                                              align = "right"),
+    Staff_Active_7day = zoo::rollapply(Staff_Confirmed2 - Staff_Recovered2,
+                                           width = 7,
+                                           FUN = mean,
+                                           na.rm = T,
+                                           fill = NA,
+                                           align = "right"),
+    Staff_Deaths_7day = zoo::rollapply(na.approx(Staff.Deaths, na.rm = F),
+                                           width = 7,
+                                           FUN = mean,
+                                           na.rm = T,
+                                           fill = NA,
+                                           align = "right")
   ) %>% 
-  dplyr::select("Facility", "Date", "Capacity","Pop_interpolated", "Residents.Confirmed", "New_Resident_Cases_7day","Staff.Confirmed", "New_Staff_Cases_7day",
+  dplyr::select("Facility", "Date", "Resident_Outbreak_Day", "Staff_Outbreak_Day", "Pop_interpolated", 
+                "Residents.Confirmed", "Residents_Confirmed2", "New_Resident_Cases_7day",
+                "Residents.Recovered", "Residents_Recovered2", "Residents_Recovered_7day",
+                "Residents_Active_7day",
+                "Residents.Deaths", "Residents_Deaths_7day",
+                "Staff.Confirmed", "Staff_Confirmed2", "New_Staff_Cases_7day",
+                "Staff.Recovered", "Staff_Recovered2", "Staff_Recovered_7day",
+                "Staff_Active_7day",
+                "Staff.Deaths", "Staff_Deaths_7day",
                 "Design_Capacity", "Percent_Occupied", "Staffed_Capacity", "Facility_Type", 
-                 "Residents.Deaths", "Staff.Deaths", "Residents.Recovered", "Staff.Recovered", 
                 "Residents.Tadmin", "Staff.Tested", "Residents.Negative", "Staff.Negative", "Residents.Pending", "Staff.Pending", 
                 "Residents.Quarantine", "Staff.Quarantine", "Residents.Active", "Residents.Tested",
                 "Address", "Zipcode", "City", "County", "County.FIPS", "Latitude", "Longitude", "source")
