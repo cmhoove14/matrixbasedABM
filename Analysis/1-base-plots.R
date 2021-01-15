@@ -65,7 +65,7 @@ pop_curves_outbreak <- dat %>%
          x = "Days since outbreak")
 
 pop_curves_outbreak
-
+test
 ggsave(plot = pop_curves_outbreak,
        filename = here::here("Plots", "pop_curves_since_outbreak_start.jpg"),
        height = 6,
