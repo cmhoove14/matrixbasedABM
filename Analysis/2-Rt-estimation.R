@@ -9,7 +9,7 @@ library(future)
 library(ggplot2)
 library(tidyverse)
 
-options(mc.cores = 4)
+options(mc.cores = parallel::detectCores())
 
 # Load data (from 0) -------------------
 dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds")) %>% 
@@ -62,13 +62,14 @@ est_Rt <- function(df, facility){
 
 # Estimate Rt in all facilities in parallel -------------------
   # Data frame with date, confirm (number new cases), and region (defining independent units)
-  inc_dat <- df %>% 
-    filter(Resident_Outbreak_Day >= 0) %>% 
-    mutate(pos = round(Residents_Confirmed2 - lag(Residents_Confirmed2))) %>% 
-    dplyr::select(Date, pos, Facility) %>% 
+  inc_dat <- dat %>% 
+    filter(Resident_Outbreak_Day >= -2) %>% 
+    mutate(pos = round(Residents_Confirmed2 - lag(Residents_Confirmed2)),
+           pos2 = if_else(pos < 0, 0, pos)) %>% 
+    dplyr::select(Date, pos2, Facility) %>% 
     ungroup() %>% 
     rename(date = Date,
-           confirm = pos, 
+           confirm = pos2, 
            region = Facility)
   
   
@@ -76,10 +77,10 @@ est_Rt <- function(df, facility){
 
 # create "outer" workers
 n_cores_per_worker <- 4
-n_workers <- detectCores()/n_cores_per_worker
+n_workers <- floor(parallel::detectCores()/n_cores_per_worker)
 
 setup_future(
-  dat,
+  inc_dat,
   strategies = c("multiprocess", "multiprocess"),
   min_cores_per_worker = n_cores_per_worker
 )
@@ -94,61 +95,5 @@ estimates <- EpiNow2::regional_epinow(reported_cases = inc_dat,
                                       horizon = 0,
                                       verbose = TRUE)
 
-
-
-
-
-
-
-
-
-
-
-
-
-# Estimate for all facilities in parallel. --------------------
-# Setup creates workers each with 4 cores. Taken from https://stackoverflow.com/questions/49436580/parallelization-with-multiple-cores-per-worker
-
-
-workers <- makeCluster(n_workers)
-# register outer_workers
-registerDoParallel(workers)
-
-clusterExport(workers, 
-              c("dat", generation_time, incubation_period, reporting_delay, est_Rt_all)
-
-
-# assuming you use foreach directly
-foreach(i = 1L:2L) %dopar% {
-  foreach(j = 1L:2L) %dopar% {
-    # code
-  }
-  
-  NULL
-}
-
-# stop inner workers
-clusterEvalQ(outer_workers, {
-  stopCluster(inner_workers)
-  registerDoSEQ()
-  NULL
-})
-
-stopCluster(outer_workers); registerDoSEQ()
-
-
-ggplot(rt_dat) +
-  geom_col(data = inc_dat,
-           aes(x = date, y = confirm/1e2),
-           fill = "grey50", alpha = 0.5) +
-  geom_col(data = sf_test,
-           aes(x = Date, y = pct),
-           fill = "darkred", alpha = 0.5) +
-  geom_line(aes(x = date,y = mean), col = "darkblue", size = 1.2) +
-  geom_ribbon(aes(x = date, ymin = mean-sd, ymax = mean+sd),
-              fill = "blue", alpha = 0.5) +
-  theme_classic() +
-  geom_hline(lty = 2, yintercept = 1) +
-  labs(x = "Date",
-       y = expression(R[t]),
-       title = "SF County Confirmed Cases and Rt Estimate")
+saveRDS(estimates,
+        here::here("data", "derived", "Rt_estimates.rds"))
