@@ -9,6 +9,11 @@ library(future)
 library(tidyverse)
 
 options(mc.cores = parallel::detectCores())
+# Load data (from 0) -------------------
+dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds")) %>% 
+  filter(!is.na(Facility) & 
+           !grepl("CHCF", Facility) & 
+           !grepl("SATF", Facility)) # Both of these facilities had 0 cases. Both seem to be specilized for heatlhcare/treatment, so makes sense
 
 #################################################################
 # More complex method as implemented in EpiNow2 that calls Stan
