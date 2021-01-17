@@ -6,14 +6,14 @@
 library(EpiNow2)
 library(data.table)
 library(future)
-library(ggplot2)
 library(tidyverse)
 
 options(mc.cores = parallel::detectCores())
 
-# Load data (from 0) -------------------
-dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds")) %>% 
-  filter(!is.na(Facility))
+#################################################################
+# More complex method as implemented in EpiNow2 that calls Stan
+# This takes a long time 
+#################################################################
 
 # Reporting delay, generation time, and serial interval parameters to be used for estimating Rt in all runs -----------------
 # Reporting delay distribution (time from infection to report)
@@ -28,9 +28,9 @@ incubation_period <- get_incubation_period(disease = "SARS-CoV-2", source = "lau
 # Stan options
 stan_use <- stan_opts()
 stan_use$cores = 4
-stan_use$warmup = 1000
+stan_use$warmup = 200
 stan_use$seed = 430
-stan_use$iter = 3000
+stan_use$iter = 800
 
 # Function to estimate Rt in single facility -------------------
 est_Rt <- function(df, facility){
@@ -63,8 +63,8 @@ est_Rt <- function(df, facility){
 # Estimate Rt in all facilities in parallel -------------------
   # Data frame with date, confirm (number new cases), and region (defining independent units)
   inc_dat <- dat %>% 
-    filter(Resident_Outbreak_Day >= -2) %>% 
-    mutate(pos = round(Residents_Confirmed2 - lag(Residents_Confirmed2)),
+    filter(Resident_Outbreak_Day >= -1 | Staff_Outbreak_Day >= -1) %>% 
+    mutate(pos = round((Residents_Confirmed2+Staff_Confirmed2) - lag(Residents_Confirmed2+Staff_Confirmed2)),
            pos2 = if_else(pos < 0, 0, pos)) %>% 
     dplyr::select(Date, pos2, Facility) %>% 
     ungroup() %>% 
@@ -95,5 +95,5 @@ estimates <- EpiNow2::regional_epinow(reported_cases = inc_dat,
                                       horizon = 0,
                                       verbose = TRUE)
 
-saveRDS(estimates,
-        here::here("data", "derived", "Rt_estimates.rds"))
+saveRDS(estimates$summary$summarised_measures$rt,
+        here::here("data", "derived", "Rt_estimates_Staff&Residents_burn200_samp800.rds"))
