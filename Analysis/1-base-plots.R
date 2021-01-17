@@ -15,7 +15,7 @@ dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
     Facility2 = str_replace(Facility, " State Prison", "")
   )
 
-# Plot case curves
+# Plot new cases among residents ----------------------
 I_curves <- dat %>% 
   ggplot() +
     geom_line(aes(x = Date, y = New_Resident_Cases_7day)) +
@@ -25,7 +25,7 @@ I_curves <- dat %>%
     theme_bw() +
     theme(strip.text = element_text(size = 6)) +
     labs(x = "Date",
-         y = "Incident cases")
+         y = "Resident incident cases (weekly average)")
 
 ggsave(plot = I_curves,
        filename = here::here("Plots", "incident_cases_by_date_faceted.jpg"),
@@ -36,6 +36,29 @@ ggsave(plot = I_curves,
 
 I_curves
 
+# Plot new cases among residents and staff----------------------
+I_curves2 <- dat %>% 
+  ggplot() +
+  geom_line(aes(x = Date, y = New_Resident_Cases_7day)) +
+  geom_line(aes(x = Date, y = New_Staff_Cases_7day), col = "blue") +
+  facet_wrap(facets = "Facility2",
+             nrow = 4, ncol = 8,
+             labeller = label_wrap_gen()) +
+  theme_bw() +
+  theme(strip.text = element_text(size = 6)) +
+  labs(x = "Date",
+       y = "Incident cases (weekly average)")
+
+ggsave(plot = I_curves2,
+       filename = here::here("Plots", "incident_cases_by_date_faceted.jpg"),
+       height = 6, 
+       width = 9,
+       units = "in",
+       dpi = 300)
+
+I_curves
+
+
 #Plot facility population curves
 pop_curves <- dat %>% 
   ggplot() +
@@ -45,7 +68,7 @@ pop_curves <- dat %>%
              nrow = 4, ncol = 8,
              labeller = label_wrap_gen()) +
   theme(strip.text = element_text(size = 6)) +
-  labs(y = "Facility Population")
+  labs(y = "Facility Resident Population")
 
 ggsave(plot = pop_curves,
        filename = here::here("Plots", "ca_state_facilities_pop_over_time_2020_faceted.jpg"),
@@ -57,25 +80,4 @@ ggsave(plot = pop_curves,
 
 pop_curves
 
-# Identify facilities with rapid depopulation
 
-
-pop_curves_outbreak <- dat %>% 
-  filter(Resident_Outbreak_Day >=0) %>% 
-  ggplot() +
-    geom_line(aes(x = Resident_Outbreak_Day, y = Pop_interpolated, col = Facility)) +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.text = element_text(size = 6)) +
-    #guides(col = guide_legend(ncol = 4)) +
-    labs(y = "Facility Population",
-         x = "Days since outbreak")
-
-pop_curves_outbreak
-
-ggsave(plot = pop_curves_outbreak,
-       filename = here::here("Plots", "pop_curves_since_outbreak_start.jpg"),
-       height = 6,
-       width = 8,
-       units = "in",
-       dpi = 300)
