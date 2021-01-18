@@ -2,4 +2,7 @@
 
 uclabb <- readr::read_csv(url("https://raw.githubusercontent.com/uclalawcovid19behindbars/historical-data/main/data/CA-historical-data.csv"))
 
-saveRDS(uclabb, "data/raw/ucla_law_covid_behind_bars_github_data_1-11-21.rds")
+saveRDS(uclabb, paste0(here::here("data","raw"), 
+                       "/ucla_law_covid_behind_bars_github_data_", 
+                       Sys.Date(),
+                       ".rds"))
