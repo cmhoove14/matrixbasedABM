@@ -1,0 +1,429 @@
+
+R version 4.0.3 (2020-10-10) -- "Bunny-Wunnies Freak Out"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> # ---------------------------------------
+> # Estimate Rt through time for state prison facilities
+> # Chris Hoover Jan 2021
+> # ---------------------------------------
+> 
+> library(EpiNow2)
+> library(data.table)
+> library(future)
+> library(tidyverse)
+> 
+> options(mc.cores = parallel::detectCores())
+> # Load data (from 0) -------------------
+> dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds")) %>% 
++   filter(!is.na(Facility) & 
++            !grepl("CHCF", Facility) & 
++            !grepl("SATF", Facility)) # Both of these facilities had 0 cases. Both seem to be specilized for heatlhcare/treatment, so makes sense
+> 
+> #################################################################
+> # More complex method as implemented in EpiNow2 that calls Stan
+> # This takes a long time 
+> #################################################################
+> 
+> # Reporting delay, generation time, and serial interval parameters to be used for estimating Rt in all runs -----------------
+> # Reporting delay distribution (time from infection to report)
+> reporting_delay <- estimate_delay(rlnorm(250,  log(5), 1),
++                                   max_value = 15, bootstraps = 100)
+> 
+> 
+> # Generation time and incubation period distributions taken from package
+> generation_time <- get_generation_time(disease = "SARS-CoV-2", source = "ganyani")
+> incubation_period <- get_incubation_period(disease = "SARS-CoV-2", source = "lauer")
+> 
+> # Stan options
+> stan_use <- stan_opts()
+> stan_use$cores = 4
+> stan_use$warmup = 200
+> stan_use$seed = 430
+> stan_use$iter = 800
+> 
+> # Function to estimate Rt in single facility -------------------
+> est_Rt <- function(df, facility){
++   
++   # Data frame with date, confirm (number new cases), and region (defining independent units)
++   inc_dat <- df %>% 
++     filter(Facility == facility & 
++              Resident_Outbreak_Day >= 0) %>% 
++     ungroup %>% 
++     mutate(pos = round(Residents_Confirmed2 - lag(Residents_Confirmed2))) %>% 
++     dplyr::select(Date, pos) %>% 
++     rename(date = Date,
++            confirm = pos)
++   
++   # Generate estimates
++   estimates <- EpiNow2::epinow(reported_cases = inc_dat, 
++                                generation_time = generation_time,
++                                delays = delay_opts(incubation_period, reporting_delay),
++                                stan = stan_use,
++                                horizon = 0,
++                                verbose = TRUE)
++   
++   # Return summarised esimates
++   return(estimates)
++ }
+> 
+> # test_Rt <- est_Rt(df = dat,
+> #                   facility = unique(dat$Facility)[1])
+> 
+> # Estimate Rt in all facilities in parallel -------------------
+>   # Data frame with date, confirm (number new cases), and region (defining independent units)
+>   inc_dat <- dat %>% 
++     filter(Resident_Outbreak_Day >= -1 | Staff_Outbreak_Day >= -1) %>% 
++     mutate(pos = round((Residents_Confirmed2+Staff_Confirmed2) - lag(Residents_Confirmed2+Staff_Confirmed2)),
++            pos2 = if_else(pos < 0, 0, pos)) %>% 
++     dplyr::select(Date, pos2, Facility) %>% 
++     ungroup() %>% 
++     rename(date = Date,
++            confirm = pos2, 
++            region = Facility)
+>   
+>   
+> 
+> 
+> # create "outer" workers
+> n_cores_per_worker <- 4
+> n_workers <- floor(parallel::detectCores()/n_cores_per_worker)
+> 
+> setup_future(
++   inc_dat,
++   strategies = c("multiprocess", "multiprocess"),
++   min_cores_per_worker = n_cores_per_worker
++ )
+INFO [2021-01-17 15:56:21] Using 6 workers with 4 cores per worker
+[1] 4
+> 
+> # Generate estimates
+> estimates <- EpiNow2::regional_epinow(reported_cases = inc_dat, 
++                                       generation_time = generation_time,
++                                       delays = delay_opts(incubation_period, reporting_delay),
++                                       rt = rt_opts(prior = list("mean" = 2,
++                                                                 "sd" = 1)),
++                                       stan = stan_use,
++                                       horizon = 0,
++                                       verbose = TRUE)
+INFO [2021-01-17 15:56:21] Producing following optional outputs: regions, summary, samples, plots, latest
+INFO [2021-01-17 15:56:21] Reporting estimates using data up to: 2021-01-08
+INFO [2021-01-17 15:56:21] No target directory specified so returning output
+INFO [2021-01-17 15:56:21] Producing estimates for: 32 regions
+INFO [2021-01-17 15:56:22] Regions excluded: 0 regions
+INFO [2021-01-17 15:56:22] Initialising estimates for: Avenal State Prison (ASP)
+DEBUG [2021-01-17 15:56:22] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:22] Avenal State Prison (ASP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 252 time steps of which 0 are a forecast
+WARN [2021-01-17 17:17:15] Avenal State Prison (ASP) (chain: 1): There were 1 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 17:17:15] Avenal State Prison (ASP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 17:18:38] Completed estimates for: Avenal State Prison (ASP)
+INFO [2021-01-17 15:56:22] Initialising estimates for: California Correctional Center (CCC)
+DEBUG [2021-01-17 15:56:22] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:22] California Correctional Center (CCC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 216 time steps of which 0 are a forecast
+WARN [2021-01-17 16:27:45] California Correctional Center (CCC) (chain: 1): There were 12 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 16:27:45] California Correctional Center (CCC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 16:28:46] Completed estimates for: California Correctional Center (CCC)
+INFO [2021-01-17 15:56:23] Initialising estimates for: California Correctional Institution (CCI)
+DEBUG [2021-01-17 15:56:23] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:23] California Correctional Institution (CCI): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 287 time steps of which 0 are a forecast
+WARN [2021-01-17 16:47:49] California Correctional Institution (CCI) (chain: 1): There were 9 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 16:47:49] California Correctional Institution (CCI) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 16:49:02] Completed estimates for: California Correctional Institution (CCI)
+INFO [2021-01-17 15:56:24] Initialising estimates for: California Institution for Men (CIM)
+DEBUG [2021-01-17 15:56:24] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:24] California Institution for Men (CIM): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 293 time steps of which 0 are a forecast
+WARN [2021-01-17 16:47:48] California Institution for Men (CIM) (chain: 1): some chains had errors; consider specifying chains = 1 to debug - .local, object, ...
+[[1]]
+Stan model 'estimate_infections' does not contain samples.
+
+WARN [2021-01-17 16:47:49] California Institution for Men (CIM) (chain: 1): There were 3 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 16:47:49] California Institution for Men (CIM) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 16:48:45] Completed estimates for: California Institution for Men (CIM)
+INFO [2021-01-17 15:56:26] Initialising estimates for: California Institution for Women (CIW)
+DEBUG [2021-01-17 15:56:26] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:26] California Institution for Women (CIW): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 289 time steps of which 0 are a forecast
+WARN [2021-01-17 17:41:49] California Institution for Women (CIW) (chain: 1): There were 4 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 17:41:49] California Institution for Women (CIW) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 17:43:17] Completed estimates for: California Institution for Women (CIW)
+INFO [2021-01-17 15:56:28] Initialising estimates for: California Medical Facility (CMF)
+DEBUG [2021-01-17 15:56:28] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 15:56:28] California Medical Facility (CMF): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 272 time steps of which 0 are a forecast
+WARN [2021-01-17 16:40:21] California Medical Facility (CMF) (chain: 1): There were 2 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 16:40:21] California Medical Facility (CMF) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 16:41:30] Completed estimates for: California Medical Facility (CMF)
+INFO [2021-01-17 16:29:00] Initialising estimates for: California Men's Colony (CMC)
+DEBUG [2021-01-17 16:29:00] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 16:29:01] California Men's Colony (CMC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 286 time steps of which 0 are a forecast
+WARN [2021-01-17 18:01:20] California Men's Colony (CMC) (chain: 1): There were 2 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:01:20] California Men's Colony (CMC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+WARN [2021-01-17 18:01:48] California Men's Colony (CMC) (chain: 1): Bulk Effective Samples Size (ESS) is too low, indicating posterior means and medians may be unreliable.
+Running the chains for more iterations may help. See
+http://mc-stan.org/misc/warnings.html#bulk-ess - 
+INFO [2021-01-17 18:02:21] Completed estimates for: California Men's Colony (CMC)
+INFO [2021-01-17 16:41:43] Initialising estimates for: California Rehabilitation Center (CRC)
+DEBUG [2021-01-17 16:41:43] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 16:41:44] California Rehabilitation Center (CRC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 246 time steps of which 0 are a forecast
+WARN [2021-01-17 17:30:00] California Rehabilitation Center (CRC) (chain: 1): There were 2 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 17:30:00] California Rehabilitation Center (CRC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 17:31:09] Completed estimates for: California Rehabilitation Center (CRC)
+INFO [2021-01-17 16:48:58] Initialising estimates for: California State Prison Corcoran (COR)
+DEBUG [2021-01-17 16:48:58] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 16:48:58] California State Prison Corcoran (COR): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 280 time steps of which 0 are a forecast
+WARN [2021-01-17 18:55:19] California State Prison Corcoran (COR) (chain: 1): There were 10 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:55:19] California State Prison Corcoran (COR) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:56:36] Completed estimates for: California State Prison Corcoran (COR)
+INFO [2021-01-17 16:49:14] Initialising estimates for: California State Prison Los Angeles County (LAC)
+DEBUG [2021-01-17 16:49:14] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 16:49:15] California State Prison Los Angeles County (LAC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 293 time steps of which 0 are a forecast
+WARN [2021-01-17 18:34:08] California State Prison Los Angeles County (LAC) (chain: 1): There were 1 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:34:08] California State Prison Los Angeles County (LAC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:35:14] Completed estimates for: California State Prison Los Angeles County (LAC)
+INFO [2021-01-17 17:18:52] Initialising estimates for: California State Prison Sacramento (SAC)
+DEBUG [2021-01-17 17:18:52] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 17:18:52] California State Prison Sacramento (SAC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 296 time steps of which 0 are a forecast
+WARN [2021-01-17 18:21:04] California State Prison Sacramento (SAC) (chain: 1): some chains had errors; consider specifying chains = 1 to debug - .local, object, ...
+[[1]]
+Stan model 'estimate_infections' does not contain samples.
+
+WARN [2021-01-17 18:21:04] California State Prison Sacramento (SAC) (chain: 1): There were 28 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:21:04] California State Prison Sacramento (SAC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:22:01] Completed estimates for: California State Prison Sacramento (SAC)
+INFO [2021-01-17 17:31:20] Initialising estimates for: California State Prison Solano (SOL)
+DEBUG [2021-01-17 17:31:20] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 17:31:20] California State Prison Solano (SOL): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 225 time steps of which 0 are a forecast
+WARN [2021-01-17 18:03:08] California State Prison Solano (SOL) (chain: 1): There were 2 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:03:08] California State Prison Solano (SOL) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:04:09] Completed estimates for: California State Prison Solano (SOL)
+INFO [2021-01-17 17:43:30] Initialising estimates for: Calipatria State Prison (CAL)
+DEBUG [2021-01-17 17:43:31] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 17:43:31] Calipatria State Prison (CAL): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 265 time steps of which 0 are a forecast
+WARN [2021-01-17 18:16:18] Calipatria State Prison (CAL) (chain: 1): There were 2 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:16:18] Calipatria State Prison (CAL) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:17:17] Completed estimates for: Calipatria State Prison (CAL)
+INFO [2021-01-17 18:02:32] Initialising estimates for: Centinela State Prison (CEN)
+DEBUG [2021-01-17 18:02:32] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:02:32] Centinela State Prison (CEN): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 283 time steps of which 0 are a forecast
+WARN [2021-01-17 18:55:27] Centinela State Prison (CEN) (chain: 1): There were 5 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:55:27] Centinela State Prison (CEN) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:56:43] Completed estimates for: Centinela State Prison (CEN)
+INFO [2021-01-17 18:04:20] Initialising estimates for: Central California Women's Facility (CCWF)
+DEBUG [2021-01-17 18:04:20] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:04:20] Central California Women's Facility (CCWF): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 220 time steps of which 0 are a forecast
+WARN [2021-01-17 18:34:50] Central California Women's Facility (CCWF) (chain: 1): There were 32 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 18:34:50] Central California Women's Facility (CCWF) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 18:35:42] Completed estimates for: Central California Women's Facility (CCWF)
+INFO [2021-01-17 18:17:31] Initialising estimates for: Chuckawalla Valley State Prison (CVSP)
+DEBUG [2021-01-17 18:17:31] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:17:31] Chuckawalla Valley State Prison (CVSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 255 time steps of which 0 are a forecast
+WARN [2021-01-17 20:29:41] Chuckawalla Valley State Prison (CVSP) (chain: 1): There were 44 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 20:29:41] Chuckawalla Valley State Prison (CVSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 20:30:39] Completed estimates for: Chuckawalla Valley State Prison (CVSP)
+INFO [2021-01-17 18:22:09] Initialising estimates for: Correctional Training Facility (CTF)
+DEBUG [2021-01-17 18:22:09] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:22:09] Correctional Training Facility (CTF): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 247 time steps of which 0 are a forecast
+INFO [2021-01-17 19:08:25] Completed estimates for: Correctional Training Facility (CTF)
+INFO [2021-01-17 18:35:26] Initialising estimates for: Deuel Vocational Institution (DVI)
+DEBUG [2021-01-17 18:35:26] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:35:26] Deuel Vocational Institution (DVI): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 275 time steps of which 0 are a forecast
+WARN [2021-01-17 19:30:00] Deuel Vocational Institution (DVI) (chain: 1): There were 23 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 19:30:00] Deuel Vocational Institution (DVI) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 19:31:24] Completed estimates for: Deuel Vocational Institution (DVI)
+INFO [2021-01-17 18:35:50] Initialising estimates for: Folsom State Prison (FOL)
+DEBUG [2021-01-17 18:35:50] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:35:51] Folsom State Prison (FOL): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 295 time steps of which 0 are a forecast
+WARN [2021-01-17 21:00:55] Folsom State Prison (FOL) (chain: 1): There were 21 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:00:55] Folsom State Prison (FOL) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 21:02:19] Completed estimates for: Folsom State Prison (FOL)
+INFO [2021-01-17 18:56:53] Initialising estimates for: High Desert State Prison (HDSP)
+DEBUG [2021-01-17 18:56:53] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:56:53] High Desert State Prison (HDSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 240 time steps of which 0 are a forecast
+WARN [2021-01-17 20:34:29] High Desert State Prison (HDSP) (chain: 1): There were 5 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 20:34:30] High Desert State Prison (HDSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 20:35:32] Completed estimates for: High Desert State Prison (HDSP)
+INFO [2021-01-17 18:56:55] Initialising estimates for: Ironwood State Prison (ISP)
+DEBUG [2021-01-17 18:56:55] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 18:56:55] Ironwood State Prison (ISP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 274 time steps of which 0 are a forecast
+WARN [2021-01-17 20:06:31] Ironwood State Prison (ISP) (chain: 1): There were 6 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 20:06:31] Ironwood State Prison (ISP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 20:07:33] Completed estimates for: Ironwood State Prison (ISP)
+INFO [2021-01-17 19:08:35] Initialising estimates for: Kern Valley State Prison (KVSP)
+DEBUG [2021-01-17 19:08:35] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 19:08:36] Kern Valley State Prison (KVSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 255 time steps of which 0 are a forecast
+WARN [2021-01-17 20:09:08] Kern Valley State Prison (KVSP) (chain: 1): There were 1 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 20:09:08] Kern Valley State Prison (KVSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 20:10:14] Completed estimates for: Kern Valley State Prison (KVSP)
+INFO [2021-01-17 19:31:36] Initialising estimates for: Mule Creek State Prison (MCSP)
+DEBUG [2021-01-17 19:31:36] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 19:31:36] Mule Creek State Prison (MCSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 287 time steps of which 0 are a forecast
+WARN [2021-01-17 21:18:35] Mule Creek State Prison (MCSP) (chain: 1): There were 11 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:18:35] Mule Creek State Prison (MCSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 21:19:47] Completed estimates for: Mule Creek State Prison (MCSP)
+INFO [2021-01-17 20:07:44] Initialising estimates for: North Kern State Prison (NKSP)
+DEBUG [2021-01-17 20:07:44] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 20:07:44] North Kern State Prison (NKSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 272 time steps of which 0 are a forecast
+WARN [2021-01-17 21:28:59] North Kern State Prison (NKSP) (chain: 1): There were 4 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:28:59] North Kern State Prison (NKSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 21:30:11] Completed estimates for: North Kern State Prison (NKSP)
+INFO [2021-01-17 20:10:24] Initialising estimates for: Pelican Bay State Prison (PBSP)
+DEBUG [2021-01-17 20:10:24] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 20:10:24] Pelican Bay State Prison (PBSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 249 time steps of which 0 are a forecast
+WARN [2021-01-17 20:57:14] Pelican Bay State Prison (PBSP) (chain: 1): There were 12 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 20:57:14] Pelican Bay State Prison (PBSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 20:58:16] Completed estimates for: Pelican Bay State Prison (PBSP)
+INFO [2021-01-17 20:30:54] Initialising estimates for: Pleasant Valley State Prison (PVSP)
+DEBUG [2021-01-17 20:30:54] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 20:30:54] Pleasant Valley State Prison (PVSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 235 time steps of which 0 are a forecast
+INFO [2021-01-17 21:19:18] Completed estimates for: Pleasant Valley State Prison (PVSP)
+INFO [2021-01-17 20:35:41] Initialising estimates for: RJ Donovan Correctional Facility (RJD)
+DEBUG [2021-01-17 20:35:41] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 20:35:41] RJ Donovan Correctional Facility (RJD): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 276 time steps of which 0 are a forecast
+WARN [2021-01-17 21:31:30] RJ Donovan Correctional Facility (RJD) (chain: 1): There were 31 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:31:30] RJ Donovan Correctional Facility (RJD) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+WARN [2021-01-17 21:32:01] RJ Donovan Correctional Facility (RJD) (chain: 1): Bulk Effective Samples Size (ESS) is too low, indicating posterior means and medians may be unreliable.
+Running the chains for more iterations may help. See
+http://mc-stan.org/misc/warnings.html#bulk-ess - 
+INFO [2021-01-17 21:32:45] Completed estimates for: RJ Donovan Correctional Facility (RJD)
+INFO [2021-01-17 20:58:25] Initialising estimates for: Salinas Valley State Prison (SVSP)
+DEBUG [2021-01-17 20:58:25] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 20:58:26] Salinas Valley State Prison (SVSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 240 time steps of which 0 are a forecast
+WARN [2021-01-17 21:25:32] Salinas Valley State Prison (SVSP) (chain: 1): There were 6 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:25:32] Salinas Valley State Prison (SVSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 21:26:29] Completed estimates for: Salinas Valley State Prison (SVSP)
+INFO [2021-01-17 21:02:38] Initialising estimates for: San Quentin State Prison (SQ)
+DEBUG [2021-01-17 21:02:38] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 21:02:39] San Quentin State Prison (SQ): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 291 time steps of which 0 are a forecast
+WARN [2021-01-17 22:27:13] San Quentin State Prison (SQ) (chain: 1): There were 9 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 22:27:13] San Quentin State Prison (SQ) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 22:28:06] Completed estimates for: San Quentin State Prison (SQ)
+INFO [2021-01-17 21:19:27] Initialising estimates for: Sierra Conservation Center (SCC)
+DEBUG [2021-01-17 21:19:27] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 21:19:28] Sierra Conservation Center (SCC): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 242 time steps of which 0 are a forecast
+WARN [2021-01-17 22:21:00] Sierra Conservation Center (SCC) (chain: 1): There were 22 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 22:21:00] Sierra Conservation Center (SCC) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 22:21:46] Completed estimates for: Sierra Conservation Center (SCC)
+INFO [2021-01-17 21:20:01] Initialising estimates for: Valley State Prison (VSP)
+DEBUG [2021-01-17 21:20:01] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 21:20:01] Valley State Prison (VSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 235 time steps of which 0 are a forecast
+WARN [2021-01-17 21:57:26] Valley State Prison (VSP) (chain: 1): There were 3 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 21:57:26] Valley State Prison (VSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 21:58:22] Completed estimates for: Valley State Prison (VSP)
+INFO [2021-01-17 21:26:39] Initialising estimates for: Wasco State Prison (WSP)
+DEBUG [2021-01-17 21:26:39] Producing following optional outputs: plots, samples, timing, latest
+DEBUG [2021-01-17 21:26:39] Wasco State Prison (WSP): Running in exact mode for 2400 samples (across 4 chains each with a warm up of 200 iterations each) and 293 time steps of which 0 are a forecast
+WARN [2021-01-17 22:30:32] Wasco State Prison (WSP) (chain: 1): There were 12 divergent transitions after warmup. See
+http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. - 
+WARN [2021-01-17 22:30:32] Wasco State Prison (WSP) (chain: 1): Examine the pairs() plot to diagnose sampling problems
+ - 
+INFO [2021-01-17 22:31:23] Completed estimates for: Wasco State Prison (WSP)
+INFO [2021-01-17 22:31:28] Completed regional estimates
+INFO [2021-01-17 22:31:28] Regions with estimates: 32
+INFO [2021-01-17 22:31:28] Regions with runtime errors: 0
+INFO [2021-01-17 22:31:28] Producing summary
+INFO [2021-01-17 22:31:28] No summary directory specified so returning summary output
+INFO [2021-01-17 22:31:36] No target directory specified so returning timings
+> 
+> saveRDS(estimates$summary$summarised_measures$rt,
++         here::here("data", "derived", "Rt_estimates_Staff&Residents_burn200_samp800.rds"))
+> 
