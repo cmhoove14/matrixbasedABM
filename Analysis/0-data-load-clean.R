@@ -85,6 +85,7 @@ clean_interpolate <- function(vec){
 # final processing to drop superfluous columns, interpolate population, derive smoothed and corrected case incidence
 fin_dat <- pop_case_merge %>%
   rename(Facility = Facility_pop) %>%
+  filter(!is.na(Facility)) %>% 
   group_by(Facility) %>%
   padr::pad() %>%
   mutate(
@@ -94,6 +95,7 @@ fin_dat <- pop_case_merge %>%
     Staff_Outbreak_Day = as.numeric(Date - Staff_Outbreak_Start),
     Pop_interpolated        = na.approx(Capacity, na.rm = FALSE),
     Residents_Confirmed2    = clean_interpolate(Residents.Confirmed),
+    New_Resident_Cases = Residents_Confirmed2 - lag(Residents_Confirmed2),
     New_Resident_Cases_7day = zoo::rollapply(data = Residents_Confirmed2 - lag(Residents_Confirmed2), 
                                              width = 7,
                                              FUN = mean,
@@ -120,12 +122,14 @@ fin_dat <- pop_case_merge %>%
                                            fill = NA,
                                            align = "right"),
     Staff_Confirmed2    = clean_interpolate(Staff.Confirmed),
+    New_Staff_Cases = Staff_Confirmed2 - lag(Staff_Confirmed2),
     New_Staff_Cases_7day = zoo::rollapply(data = Staff_Confirmed2 - lag(Staff_Confirmed2), 
                                              width = 7,
                                              FUN = mean,
                                              na.rm = T,
                                              fill = NA,
                                              align = "right"),
+    New_Cases_All = New_Resident_Cases + New_Staff_Cases,
     Staff_Recovered2 = clean_interpolate(Staff.Recovered),
     Staff_Recovered_7day = zoo::rollapply(na.approx(Staff.Recovered, na.rm = F),
                                               width = 7,
@@ -147,11 +151,11 @@ fin_dat <- pop_case_merge %>%
                                            align = "right")
   ) %>% 
   dplyr::select("Facility", "Date", "Resident_Outbreak_Day", "Staff_Outbreak_Day", "Pop_interpolated", 
-                "Residents.Confirmed", "Residents_Confirmed2", "New_Resident_Cases_7day",
+                "Residents.Confirmed", "Residents_Confirmed2", "New_Resident_Cases", "New_Resident_Cases_7day",
                 "Residents.Recovered", "Residents_Recovered2", "Residents_Recovered_7day",
                 "Residents_Active_7day",
                 "Residents.Deaths", "Residents_Deaths_7day",
-                "Staff.Confirmed", "Staff_Confirmed2", "New_Staff_Cases_7day",
+                "Staff.Confirmed", "Staff_Confirmed2", "New_Staff_Cases", "New_Staff_Cases_7day", "New_Cases_All",
                 "Staff.Recovered", "Staff_Recovered2", "Staff_Recovered_7day",
                 "Staff_Active_7day",
                 "Staff.Deaths", "Staff_Deaths_7day",
