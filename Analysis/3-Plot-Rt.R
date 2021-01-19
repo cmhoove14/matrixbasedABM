@@ -6,7 +6,26 @@
 library(ggplot2)
 library(tidyverse)
 
-Rts <- readRDS(here::here("data", "derived", "Rt_estimates_df.rds")) %>%   
+# Cori et al method among residents ------------------
+cori_rts_dat <- readRDS(here::here("data", "derived", "Cori_etal_Rts_residents.rds"))
+
+cori_rts_plot <- cori_rts_dat %>% 
+  mutate(Facility2 = str_replace(Facility, " State Prison", "")) %>% 
+  ggplot() +
+    geom_line(aes(x = Date, y = `Median(R)`)) +
+    geom_ribbon(aes(x = Date, ymin = `Quantile.0.25(R)`, ymax = `Quantile.0.75(R)`),
+                col = "grey50", alpha = 0.5) +
+    facet_wrap(facets = "Facility2",
+               nrow = 4, ncol = 8,
+               labeller = label_wrap_gen()) +
+    theme_bw() +
+    theme(strip.text = element_text(size = 6.5)) +
+    labs(x = "Date",
+         y = "Resident Active Cases")
+
+
+# EpiNow2 Rt estimates
+Rts <- readRDS(here::here("data", "derived", "Rt_estimates_Staff&Residents_burn200_samp800.rds")) %>%   
   mutate(
     Facility = str_replace(region, " State Prison", "")
   )
