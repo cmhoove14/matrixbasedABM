@@ -18,12 +18,12 @@ dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
 # Plot new cases among residents ----------------------
 I_curves <- dat %>% 
   ggplot() +
-    geom_line(aes(x = Date, y = New_Resident_Cases_7day)) +
+    geom_line(aes(x = Date, y = New_Residents_Confirmed_7day)) +
     facet_wrap(facets = "Facility2",
                nrow = 4, ncol = 8,
                labeller = label_wrap_gen()) +
     theme_bw() +
-    theme(strip.text = element_text(size = 6)) +
+    theme(strip.text = element_text(size = 6.5)) +
     labs(x = "Date",
          y = "Resident incident cases (weekly average)")
 
@@ -36,21 +36,20 @@ ggsave(plot = I_curves,
 
 I_curves
 
-# Plot new cases among residents and staff----------------------
+# Plot active cases among residents ----------------------
 I_curves2 <- dat %>% 
   ggplot() +
-  geom_line(aes(x = Date, y = New_Resident_Cases_7day)) +
-  geom_line(aes(x = Date, y = New_Staff_Cases_7day), col = "blue") +
+  geom_line(aes(x = Date, y = Residents_Active)) +
   facet_wrap(facets = "Facility2",
              nrow = 4, ncol = 8,
              labeller = label_wrap_gen()) +
   theme_bw() +
-  theme(strip.text = element_text(size = 6)) +
+  theme(strip.text = element_text(size = 6.5)) +
   labs(x = "Date",
-       y = "Incident cases (weekly average)")
+       y = "Resident Active Cases")
 
 ggsave(plot = I_curves2,
-       filename = here::here("Plots", "incident_cases_by_date_faceted.jpg"),
+       filename = here::here("Plots", "active_cases_by_date_faceted.jpg"),
        height = 6, 
        width = 9,
        units = "in",
@@ -59,7 +58,7 @@ ggsave(plot = I_curves2,
 I_curves
 
 
-#Plot facility population curves
+#Plot facility population curves ----------------------
 pop_curves <- dat %>% 
   ggplot() +
   geom_line(aes(x = Date, y = Pop_interpolated)) +
