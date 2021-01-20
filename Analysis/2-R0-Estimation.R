@@ -148,3 +148,22 @@ ggsave(plot = R0_plot,
        width = 9,
        units = "in",
        dpi = 300)
+
+# Compare R0 to Percent occupied at beginning of outbreak and percent depopulated at beginning of outbreak ---------------------
+R0s_percap <- fac_R0s %>% 
+  left_join(dat_exp_phase %>% 
+              group_by(Facility2) %>% 
+              filter(Date == min(Date)) %>% 
+              dplyr::select(Nt, N0, N_frac, Percent_Occupied))
+
+R0s_percap %>% 
+  ggplot(aes(x = Percent_Occupied, y = as.numeric(R0))) +
+    geom_point() +
+    theme_bw() +
+    geom_smooth(method = "lm")
+
+R0s_percap %>% 
+  ggplot(aes(x = N_frac, y = as.numeric(R0))) +
+  geom_point() +
+  theme_bw() +
+  geom_smooth(method = "lm")
