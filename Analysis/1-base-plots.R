@@ -15,6 +15,11 @@ dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
     Facility2 = str_replace(Facility, " State Prison", "")
   )
 
+dat_exp_phase <- readRDS(here::here("data", "derived", "state_prisons_dat_exp_phase.rds")) %>% 
+  mutate(
+    Facility2 = str_replace(Facility, " State Prison", "")
+  )
+
 # Plot new cases among residents ----------------------
 I_curves <- dat %>% 
   ggplot() +
@@ -107,7 +112,4 @@ ggsave(plot = ar_plot,
        units = "in",
        dpi = 300)
 
-# Plot depopulation prior to first case among residents --------------
-dat %>% 
-  filter(Resident_Outbreak_Day == 0) %>% 
-  pull(N_frac)
+
