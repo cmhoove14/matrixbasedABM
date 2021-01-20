@@ -81,6 +81,32 @@ pop_curves
 
 
 
+# Get and plot attack rates -------------------------
+attack_rates <- dat %>% 
+  filter(Date == as.Date("2021-01-01")) %>% 
+  mutate(
+    attack_rate = Residents_Confirmed2/N0
+  ) 
+
+# Rearrange order of facilities by attack rate for plot aesthetics
+attack_rates$Facility_order <- factor(attack_rates$Facility2, 
+                                      levels = attack_rates$Facility2[order(-attack_rates$attack_rate)])
+
+ar_plot <- attack_rates %>% 
+  ggplot() +
+    geom_col(aes(x = Facility_order, y = attack_rate)) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "Facility",
+         y = "Attack Rate")
+
+ggsave(plot = ar_plot,
+       filename = here::here("Plots", "facility_april1_jan1_attack_rates.jpg"),
+       height = 6, 
+       width = 8,
+       units = "in",
+       dpi = 300)
+
 # Plot depopulation prior to first case among residents --------------
 dat %>% 
   filter(Resident_Outbreak_Day == 0) %>% 
