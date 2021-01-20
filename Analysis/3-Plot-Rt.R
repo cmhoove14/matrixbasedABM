@@ -25,7 +25,7 @@ cori_rts_plot <- cori_rts_dat %>%
 
 
 # EpiNow2 Rt estimates
-Rts <- readRDS(here::here("data", "derived", "Rt_estimates_Staff&Residents_burn200_samp800.rds")) %>%   
+Rts <- readRDS(here::here("data", "derived", "Rt_estimates_df.rds")) %>%   
   mutate(
     Facility = str_replace(region, " State Prison", "")
   )
@@ -50,21 +50,4 @@ ggsave(plot = rt_plots,
        width = 9,
        units = "in",
        dpi = 300)
-
-
-              ggplot(rt_dat) +
-                geom_col(data = inc_dat,
-                         aes(x = date, y = confirm/1e2),
-                         fill = "grey50", alpha = 0.5) +
-                geom_col(data = sf_test,
-                         aes(x = Date, y = pct),
-                         fill = "darkred", alpha = 0.5) +
-                geom_line(aes(x = date,y = mean), col = "darkblue", size = 1.2) +
-                geom_ribbon(aes(x = date, ymin = mean-sd, ymax = mean+sd),
-                            fill = "blue", alpha = 0.5) +
-                theme_classic() +
-                geom_hline(lty = 2, yintercept = 1) +
-                labs(x = "Date",
-                     y = expression(R[t]),
-                     title = "SF County Confirmed Cases and Rt Estimate")
               
