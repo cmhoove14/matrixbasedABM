@@ -112,4 +112,26 @@ ggsave(plot = ar_plot,
        units = "in",
        dpi = 300)
 
+# Depopulation prior to outbreak (exponential phase) ------------------------
+exp_phase_start <- dat_exp_phase %>% 
+  filter(Date == min(Date)) 
+
+exp_phase_start$Facility_order <- factor(exp_phase_start$Facility2, 
+                                         levels = exp_phase_start$Facility2[order(-exp_phase_start$N_frac)])
+
+
+exp_phase_start_plot <- exp_phase_start %>% 
+  ggplot() +
+    geom_col(aes(x = Facility_order, y = N_frac)) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+    labs(x = "Facility",
+         y = "Proportion of 4/1 population at outbreak start")
+
+ggsave(plot = exp_phase_start_plot,
+       filename = here::here("Plots", "facility_april1_outbreak_start_depop.jpg"),
+       height = 7, 
+       width = 8,
+       units = "in",
+       dpi = 300)
 
