@@ -223,14 +223,14 @@ get_growth_phase <- function(facility, DF){
 }
 
 # Get data frame of expnential phase for all facilities
-dat_exp_phase <- bind_rows(lapply(unique(dat %>% 
+dat_exp_phase <- bind_rows(lapply(unique(fin_dat %>% 
                                            filter(!is.na(Facility) & 
                                                     !grepl("CHCF", Facility) & 
                                                     !grepl("SATF", Facility)) %>% #Facilities with no cases
                                            pull(Facility)), 
                                   function(f){
-                                    start_to_peak <- get_growth_phase(f, dat)
-                                    out <- dat %>% 
+                                    start_to_peak <- get_growth_phase(f, fin_dat)
+                                    out <- fin_dat %>% 
                                       filter(Facility == f) %>% 
                                       filter(Date >= start_to_peak[1] & Date <= start_to_peak[2])
                                     return(out)
