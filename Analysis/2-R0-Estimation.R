@@ -88,6 +88,7 @@ fac_R0s <- bind_rows(lapply(unique(dat$Facility),
                                        "R0_hi" = round(R_est$conf.int[2],2)))
                             }))
 
+# Get labels and add to plot
 fac_R0s <- fac_R0s %>% 
   mutate(
     label     = paste0(R0," (",
@@ -108,6 +109,26 @@ I_curves_label <- I_curves +
 
 ggsave(plot = I_curves_label,
        filename = here::here("Plots", "R0_estimates_exponential_growth_incident_cases.jpg"),
+       height = 6, 
+       width = 9,
+       units = "in",
+       dpi = 300)
+
+# Separate plot with R0s alone
+R0_plot <- fac_R0s %>% 
+  ggplot() +
+    geom_point(aes(x = Facility2, y = as.numeric(R0))) +
+    geom_errorbar(aes(x = Facility2, ymin = as.numeric(R0_lo), ymax = as.numeric(R0_hi)),
+                  width = 0.2) +
+    ylim(c(0,max(as.numeric(fac_R0s$R0_hi)))) +
+    geom_hline(yintercept = 1, lty = 3) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "Facility", 
+         y = expression(R[0]~Estimate))
+  
+ggsave(plot = R0_plot,
+       filename = here::here("Plots", "R0_estimates_exponential_growth_point_intervals.jpg"),
        height = 6, 
        width = 9,
        units = "in",
