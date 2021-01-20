@@ -36,7 +36,8 @@ cumsum_diffs <- function(vec1, vec2, vec3){
 # See data/get for scripts to get and process data from online sources
 
 uclabb <- readRDS(here::here("data", "raw", "ucla_law_covid_behind_bars_github_data_1-17-21.rds")) %>% 
-  dplyr::select(-(Is.Different.Operator:Source.Capacity))
+  dplyr::select(-(Is.Different.Operator:Source.Capacity)) %>% 
+  filter(Date >= as.Date("2020-04-01"))
 pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2020-01-11.rds")) %>% 
   mutate(dplyr::across(.cols = c("Capacity", "Design_Capacity", "Percent_Occupied", "Staffed_Capacity"),
                 .fns = as.numeric))
@@ -103,7 +104,9 @@ intermediate_clean <- pop_case_merge %>%
     Resident_Outbreak_Day   = as.numeric(Date - Resident_Outbreak_Start),
     Staff_Outbreak_Start    = min(Date[which(Staff.Confirmed > 0)], na.rm = T),
     Staff_Outbreak_Day      = as.numeric(Date - Staff_Outbreak_Start),
-    Pop_interpolated        = na.approx(Capacity, na.rm = FALSE)
+    Nt                      = na.approx(Capacity, na.rm = FALSE),
+    N0                      = first(Capacity),
+    N_frac                  = Nt/N0
   ) %>% 
 # Correct cumulative counts for days resulting in negative cumulative changes
   mutate(
@@ -175,7 +178,7 @@ fin_dat <- intermediate_clean %>%
       align = "right"
     ),
   ) %>% 
-  dplyr::select("Facility", "Date", "Resident_Outbreak_Day", "Staff_Outbreak_Day", "Pop_interpolated", 
+  dplyr::select("Facility", "Date", "Resident_Outbreak_Day", "Staff_Outbreak_Day", "Nt", "N0", "N_frac",
                 "Residents.Confirmed", "Residents_Confirmed2", "New_Residents_Confirmed", "New_Residents_Confirmed_rmv_neg", "New_Residents_Confirmed_7day",
                 "Residents.Recovered", "Residents_Recovered2", "New_Residents_Recovered", "New_Residents_Recovered_rmv_neg", "New_Residents_Recovered_7day",
                 "Residents.Deaths", "Residents_Deaths2", "New_Residents_Deaths", "New_Residents_Deaths_rmv_neg", "New_Residents_Deaths_7day",
