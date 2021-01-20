@@ -55,7 +55,8 @@ fac_R0s <- bind_rows(lapply(unique(dat$Facility),
                               return(c("Facility" = f,
                                        "R0" = round(R_est$R,2),
                                        "R0_lo" = round(R_est$conf.int[1],2),
-                                       "R0_hi" = round(R_est$conf.int[2],2)))
+                                       "R0_hi" = round(R_est$conf.int[2],2),
+                                       "Rsquared" = R_est$Rsquared))
                             }))
 
 # Get labels and add to plot
@@ -93,7 +94,8 @@ fac_R0s2 <- bind_rows(lapply(unique(dat$Facility),
                               return(c("Facility" = f,
                                        "R0" = round(R_est$R,2),
                                        "R0_lo" = round(R_est$conf.int[1],2),
-                                       "R0_hi" = round(R_est$conf.int[2],2)))
+                                       "R0_hi" = round(R_est$conf.int[2],2),
+                                       "Rsquared" = R_est$Rsquared))
                             }))
 
 # Get labels and add to plot
@@ -129,27 +131,64 @@ ggsave(plot = I_curves_label2,
 R0_plot <- bind_rows(fac_R0s,fac_R0s2) %>% 
   ggplot() +
     geom_point(aes(x = Facility2, y = as.numeric(R0), col = GT)) +
-    geom_errorbar(aes(x = Facility2, 
+    geom_errorbar(aes(x    = Facility2, 
                       ymin = as.numeric(R0_lo), 
                       ymax = as.numeric(R0_hi),
-                      col = GT),
+                      col  = GT),
                   width = 0.2) +
     ylim(c(0,max(as.numeric(fac_R0s$R0_hi)))) +
     geom_hline(yintercept = 1, lty = 3) +
     theme_bw() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          axis.text.y = element_text(size = 12),
+    theme(axis.text.x  = element_text(angle = 45, hjust = 1),
+          axis.text.y  = element_text(size = 12),
           axis.title.y = element_text(size = 14)) +
-    labs(x = "Facility", 
-         y = expression(R[0]~Estimate),
+    labs(x   = "Facility", 
+         y   = expression(R[0]~Estimate),
          col = "Generation\nInterval\nsource")
   
-ggsave(plot = R0_plot,
+ggsave(plot     = R0_plot,
        filename = here::here("Plots", "R0_estimates_exponential_growth_point_intervals.jpg"),
+       height   = 6, 
+       width    = 9,
+       units    = "in",
+       dpi      = 300)
+
+# REmove facilities where exponential method did not provide good fit
+R0_plot_rmv_bad_fits <- bind_rows(fac_R0s,fac_R0s2) %>% 
+  mutate(R0    = if_else(Rsquared < 0.80,
+                      NA_real_,
+                      as.numeric(R0)),
+         R0_lo = if_else(Rsquared < 0.80,
+                         NA_real_,
+                         as.numeric(R0_lo)),
+         R0_hi = if_else(Rsquared < 0.80,
+                         NA_real_,
+                         as.numeric(R0_hi))) %>% 
+  ggplot() +
+  geom_point(aes(x = Facility2, y = as.numeric(R0), col = GT)) +
+  geom_errorbar(aes(x = Facility2, 
+                    ymin = as.numeric(R0_lo), 
+                    ymax = as.numeric(R0_hi),
+                    col = GT),
+                width = 0.2) +
+  ylim(c(0,max(as.numeric(fac_R0s$R0_hi)))) +
+  geom_hline(yintercept = 1, lty = 3) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14)) +
+  labs(x = "Facility", 
+       y = expression(R[0]~Estimate),
+       col = "Generation\nInterval\nsource")
+
+ggsave(plot = R0_plot_rmv_bad_fits,
+       filename = here::here("Plots", "R0_estimates_exponential_growth_good_fits_point_intervals.jpg"),
        height = 6, 
        width = 9,
        units = "in",
        dpi = 300)
+
+
 
 # Compare R0 to Percent occupied at beginning of outbreak and percent depopulated at beginning of outbreak ---------------------
 R0s_percap <- fac_R0s %>% 
