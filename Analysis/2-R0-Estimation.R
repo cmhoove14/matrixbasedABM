@@ -137,7 +137,9 @@ R0_plot <- bind_rows(fac_R0s,fac_R0s2) %>%
     ylim(c(0,max(as.numeric(fac_R0s$R0_hi)))) +
     geom_hline(yintercept = 1, lty = 3) +
     theme_bw() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 12),
+          axis.title.y = element_text(size = 14)) +
     labs(x = "Facility", 
          y = expression(R[0]~Estimate),
          col = "Generation\nInterval\nsource")
