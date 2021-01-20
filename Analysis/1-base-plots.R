@@ -58,7 +58,7 @@ ggsave(plot = I_curves2,
 I_curves
 
 
-#Plot facility population curves ----------------------
+# Plot facility population curves ----------------------
 pop_curves <- dat %>% 
   ggplot() +
   geom_line(aes(x = Date, y = Pop_interpolated)) +
@@ -80,3 +80,8 @@ ggsave(plot = pop_curves,
 pop_curves
 
 
+
+# Plot depopulation prior to first case among residents --------------
+dat %>% 
+  filter(Resident_Outbreak_Day == 0) %>% 
+  pull(N_frac)
