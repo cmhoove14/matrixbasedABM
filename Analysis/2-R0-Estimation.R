@@ -15,6 +15,11 @@ dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
     Facility2 = str_replace(Facility, " State Prison", "")
   )
 
+dat_exp_phase <- readRDS(here::here("data", "derived", "state_prisons_dat_exp_phase.rds")) %>% 
+  mutate(
+    Facility2 = str_replace(Facility, " State Prison", "")
+  )
+
 # Plot to build on 
 I_curves <- dat %>% 
   ggplot() +
@@ -30,41 +35,6 @@ I_curves <- dat %>%
 # create generation time
 GT_sars2 <-  generation.time("gamma", c(3.95,1.51)) 
 
-# function to get data for exponential growth phase for facility
-get_growth_phase <- function(facility, DF){
-  data <- DF %>% 
-    filter(Facility == facility)
-  
-  peak_day <- which.max(data %>% pull(New_Residents_Confirmed_7day))
-  data_before_peak <- data[1:peak_day,]
-  inc_til_peak <- round(data_before_peak$New_Residents_Confirmed_7day)
-  
-  day <- peak_day
-  inc_day <- inc_til_peak[day]
-
-  while(inc_day > 0 & day > 7){ # Stop once day gets to 7 due to 7 day smoothing wndow right align means NAs for first 7 observations
-    day <- day-1
-    inc_day <- inc_til_peak[day]
-  }
-  
-  
-  start_day <- day
-  
-  peak_date <- data$Date[peak_day]
-  start_date <- data$Date[start_day]
-  
-  return(c(start_date, peak_date))
-}
-
-# Get data frame of expnential phase for all facilities
-dat_exp_phase <- bind_rows(lapply(unique(dat$Facility),
-                                  function(f){
-                                    start_to_peak <- get_growth_phase(f, dat)
-                                    out <- dat %>% 
-                                      filter(Facility == f) %>% 
-                                      filter(Date >= start_to_peak[1] & Date <= start_to_peak[2])
-                                    return(out)
-                                  }))
 
 # Add expnential phase to facilities plot
 I_curves <- I_curves +
