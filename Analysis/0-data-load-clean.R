@@ -106,7 +106,9 @@ intermediate_clean <- pop_case_merge %>%
     Staff_Outbreak_Day      = as.numeric(Date - Staff_Outbreak_Start),
     Nt                      = na.approx(Capacity, na.rm = FALSE),
     N0                      = first(Capacity),
-    N_frac                  = Nt/N0
+    N_frac                  = Nt/N0,
+    Design_Capacity         = first(Design_Capacity),
+    Percent_Occupied        = Nt/Design_Capacity
   ) %>% 
 # Correct cumulative counts for days resulting in negative cumulative changes
   mutate(
