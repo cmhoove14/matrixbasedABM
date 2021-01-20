@@ -107,7 +107,7 @@ I_curves_label <- I_curves +
   )
 
 ggsave(plot = I_curves_label,
-       filename = here::here("Plots", "R0_estimates_exponential_grwoth_incident_cases.jpg"),
+       filename = here::here("Plots", "R0_estimates_exponential_growth_incident_cases.jpg"),
        height = 6, 
        width = 9,
        units = "in",
