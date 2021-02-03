@@ -35,10 +35,10 @@ cumsum_diffs <- function(vec1, vec2, vec3){
 
 # See data/get for scripts to get and process data from online sources
 
-uclabb <- readRDS(here::here("data", "raw", "ucla_law_covid_behind_bars_github_data_1-17-21.rds")) %>% 
+uclabb <- read_csv(here::here("data", "raw", "ucla_law_covid_behind_bars2021-02-02.csv")) %>% 
   dplyr::select(-(Is.Different.Operator:Source.Capacity)) %>% 
   filter(Date >= as.Date("2020-04-01"))
-pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2020-01-11.rds")) %>% 
+pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2021-02-02.rds")) %>% 
   mutate(dplyr::across(.cols = c("Capacity", "Design_Capacity", "Percent_Occupied", "Staffed_Capacity"),
                 .fns = as.numeric))
 
@@ -193,7 +193,7 @@ fin_dat <- intermediate_clean %>%
                 "Residents.Quarantine", "Staff.Quarantine", "Residents.Active", "Residents.Tested",
                 "Address", "Zipcode", "City", "County", "County.FIPS", "Latitude", "Longitude", "source")
 
-saveRDS(fin_dat, here::here("data", "derived", "state_prisons_pop_cases_fin.rds"))
+saveRDS(fin_dat, here::here("data", "derived", paste0("state_prisons_pop_cases_fin",Sys.Date(),".rds")))
 
 # ------------------------------
 # function to get data for exponential growth phase for facility

@@ -1,0 +1,1 @@
+system(paste0("wget -O ", here::here("data", "raw", "data_gov_SNFs_"), Sys.Date(), ".csv " , "https://data.chhs.ca.gov/dataset/7759311f-1aa8-4ff6-bfbb-ba8f64290ae2/resource/d4d68f74-9176-4969-9f07-1546d81db5a7/download/covid19datanursinghome.csv"))

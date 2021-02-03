@@ -5,7 +5,9 @@ pdf_files <- list.files(here::here("data", "raw"),
                         pattern = ".pdf")
 
 pdf_to_table <- function(pdf_file){
-  got_date <- as.Date(paste0("2020-",
+  got_year <- if_else(substr(pdf_file,7,8) == "21", "2021", "2020")
+  
+  got_date <- as.Date(paste0(got_year, "-",
                              substr(pdf_file,9,10),
                              "-",
                              substr(pdf_file,11,12)))
@@ -68,5 +70,5 @@ pdf_to_table <- function(pdf_file){
 fin_pop_dat <- bind_rows(lapply(pdf_files, pdf_to_table))  
                 
 saveRDS(fin_pop_dat, 
-        here::here("data", "derived", "cdcr_population_ts_2020-01-11.rds"))
+        paste0(here::here("data", "derived"), "/cdcr_population_ts_", Sys.Date(),".rds"))
      

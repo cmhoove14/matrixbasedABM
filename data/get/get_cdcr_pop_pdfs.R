@@ -5,9 +5,13 @@ library(tidyverse)
 # Download all pdfs for conversion
 # -----------------
 base_url <- "https://www.cdcr.ca.gov/research/wp-content/uploads/sites/174/" 
+target_year <- "2021/"
 
-start_date <- as.Date("2020-01-01")
-end_date   <- as.Date("2020-12-31")
+#start_date <- as.Date("2020-01-01")
+#end_date   <- as.Date("2020-12-31")
+start_date <- as.Date("2021-01-06")
+end_date   <- Sys.Date()
+
 interval   <- 7
 get_dates  <- seq.Date(start_date, end_date, interval)
 
@@ -33,10 +37,9 @@ get_dates  <- seq.Date(start_date, end_date, interval)
                              "10",
                              get_month)
     
-    get_url <- paste0(base_url, 
-                      "2020/", 
+    get_url <- paste0(base_url, target_year, 
                       get_month_file,
-                      "/Tpop1d20",
+                      "/Tpop1d", substr(target_year,3,4),
                       get_month,
                       get_day,
                       ".pdf")
