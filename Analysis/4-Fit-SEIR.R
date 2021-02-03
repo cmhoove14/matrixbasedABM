@@ -98,8 +98,12 @@ plot(SQ_DAT$t[1:116], SQ_DAT$I[1:116], pch = 16, col = 2,
     par_sweeps2 <- cbind(runif(n_sweeps, 0,10),    # E0 prior
                         runif(n_sweeps, 1, 10),   # R0 prior
                         runif(n_sweeps, 0, 1),   # sigma (incubation period) prior
-                        runif(n_sweeps, 0, 1),     # gamma (infectious duration) prior
-                        runif(n_sweeps, -2, 2))  # alpha (pop_red) prior
+                        runif(n_sweeps, 0, 1),  # gamma (infectious duration) prior
+                        runif(n_sweeps, 0,1),   # alpha (effect of depopulation on transmission)
+                        rep(1,n_sweeps),        # rhoS (susceptibles removed by depopulation?)  
+                        rep(1,n_sweeps),        # rhoE  (exposed removed by depopulation?)
+                        rep(1,n_sweeps),        # rhoI  (infected removed by depopulation?)
+                        rep(1,n_sweeps))        # rhoR  (removed removed by depopulation?)
     
     # Sweep to get initial par estimates
     sweep_lls2 <- apply(par_sweeps2, 1, FUN = function(x){
@@ -113,7 +117,7 @@ plot(SQ_DAT$t[1:116], SQ_DAT$I[1:116], pch = 16, col = 2,
     # Check fit of initial estimates
     init_pars2 <- par_sweeps2[which.min(sweep_lls2),]
     
-    init_sim2 <- sim_seir(States0 = c("E" = init_pars2[1], "I" = 1, "R" = 0),
+    init_sim2 <- sim_seir(States0 = c("S" = sq_N_fx(1), "E" = init_pars2[1], "I" = 1, "R" = 0),
                           tsim = 1:60,
                           mod = seir_ode_pop_change,
                           theta = init_pars2[2:5],
