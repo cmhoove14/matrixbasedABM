@@ -1,0 +1,108 @@
+# ---------------------------------------
+# Get distribution of outbreak sizes among facilities
+# Chris Hoover Jan 2021
+# ---------------------------------------
+
+library(tidyverse)
+
+# Load data (from 0) -------------------
+dat <- readRDS(here::here("data", "derived", "state_prisons_pop_cases_fin.rds")) %>% 
+  filter(!is.na(Facility) & 
+           !grepl("CHCF", Facility) & 
+           !grepl("SATF", Facility)) # Both of these facilities had 0 cases. Both seem to be specilized for heatlhcare/treatment, so makes sense
+
+# Identify outbreaks --------------------
+
+# 7 day washout period 
+outbreaks_df7day <- dat %>% 
+  dplyr::select(c(Facility:Residents_Active)) %>% 
+  group_by(Facility) %>% 
+  mutate( # Identify outbreaks as new cases emerging following 10 days with no cases
+    new_cases_10day = zoo::rollsum(New_Residents_Confirmed_rmv_neg, k = 7, 
+                                   na.pad = T, align = "right"),
+    new_cases_10day_lead1 = lead(new_cases_10day),
+    outbreak_start = if_else(new_cases_10day == 0 & new_cases_10day_lead1 > 0, 1, 0),
+    outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
+    Facility_Outbreak = paste0(Facility, " Outbreak ", outbreak_num),
+    plot7day_cases = if_else(new_cases_10day == 0, NA_real_, New_Residents_Confirmed_7day)
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(outbreak_num) & outbreak_num > 0)
+
+
+
+# 10 day washout period 
+outbreaks_df10day <- dat %>% 
+  dplyr::select(c(Facility:Residents_Active)) %>% 
+  group_by(Facility) %>% 
+  mutate( # Identify outbreaks as new cases emerging following 10 days with no cases
+    new_cases_10day = zoo::rollsum(New_Residents_Confirmed_rmv_neg, k = 10, 
+                                   na.pad = T, align = "right"),
+    new_cases_10day_lead1 = lead(new_cases_10day),
+    outbreak_start = if_else(new_cases_10day == 0 & new_cases_10day_lead1 > 0, 1, 0),
+    outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
+    Facility_Outbreak = paste0(Facility, " Outbreak ", outbreak_num),
+    plot7day_cases = if_else(new_cases_10day == 0, NA_real_, New_Residents_Confirmed_7day)
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(outbreak_num) & outbreak_num > 0)
+
+
+
+# 14 day washout period      
+outbreaks_df14day <- dat %>% 
+  dplyr::select(c(Facility:Residents_Active)) %>% 
+  group_by(Facility) %>% 
+  mutate( # Identify outbreaks as new cases emerging following 10 days with no cases
+    new_cases_10day = zoo::rollsum(New_Residents_Confirmed_rmv_neg, k = 14, 
+                                   na.pad = T, align = "right"),
+    new_cases_10day_lead1 = lead(new_cases_10day),
+    outbreak_start = if_else(new_cases_10day == 0 & new_cases_10day_lead1 > 0, 1, 0),
+    outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
+    Facility_Outbreak = paste0(Facility, " Outbreak ", outbreak_num),
+    plot7day_cases = if_else(new_cases_10day == 0, NA_real_, New_Residents_Confirmed_7day)
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(outbreak_num) & outbreak_num > 0)
+
+
+# Plot outbreak size distribution -------------------
+outbreak_size7day <- outbreaks_df7day %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+
+
+outbreak_size10day <- outbreaks_df10day %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+
+
+outbreak_size14day <- outbreaks_df14day %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+
+
+
+par(mfrow = c(3,1))
+hist(outbreak_size7day$outbreak_size, breaks = 30,
+     xlab = "Outbreak Size", main = "Outbreak size dist'n with 7 day washout")
+hist(outbreak_size10day$outbreak_size, breaks = 30,
+     xlab = "Outbreak Size", main = "Outbreak size dist'n with 10 day washout")
+hist(outbreak_size14day$outbreak_size, breaks = 30,
+     xlab = "Outbreak Size", main = "Outbreak size dist'n with 14 day washout")
+
+
+# Plot time series with outbreaks delineated -----------------------
+outbreaks_df10day %>% 
+  mutate(Facility2 = str_replace(Facility, " State Prison", "")) %>% 
+  ggplot() +
+    geom_line(aes(x = Date, y = plot7day_cases, col = as.factor(outbreak_num))) +
+    theme_classic() +
+    scale_y_continuous(trans = "log1p",
+                       breaks = c(0,10,100,1000)) +
+    facet_wrap(facets = "Facility2",
+               nrow = 4, ncol = 8,
+               labeller = label_wrap_gen()) +
+    labs(y = "7-day average of incident resient cases",
+         col = "Facility\nOutbreak\nNumber")
+  
