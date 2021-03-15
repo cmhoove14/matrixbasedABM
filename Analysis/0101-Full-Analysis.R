@@ -118,14 +118,15 @@ calc_cluster_logL_fix_k <- function(R, k, data, thresh) {
 # Optimizer to find best fit Reff with fixed k
 reff_find <- function(R_INIT, K_est, DATA, THRESH){
   out_fit <- optim(par = R_INIT, 
-                   fn = calc_cluster_logL_fix_k, 
-                   # Additional functions to cal_cluster_logL
-                   k = K_est,
-                   data = DATA,
-                   thresh = THRESH,
+                   fn = calc_cluster_logL_fix_k,
                    method = "Brent",
                    #control = list("trace" = 1)
-                   hessian = TRUE)
+                   hessian = TRUE, 
+                   lower = 0, upper = 1e10,
+                   # Additional functions to calc_cluster_logL
+                   k = K_est,
+                   data = DATA,
+                   thresh = THRESH)
   
   if(out_fit$convergence == 0){
     return(list("logPars" = out_fit$par,
@@ -290,12 +291,12 @@ outbreak_size_distn
 # Estimate Reff and k from outbreak size distributions --------------------------------
 wash_thresh_k <- expand.grid("Wash" = c(7,10,14),
                              "thresh" = c(3,5,10),
-                             "k" = c(0.1,0.2,0.3,1))
+                             "k" = seq(0.1,1.0,by = 0.1))
 
 Reff_ests <- t(apply(wash_thresh_k,1,function(x){
-  wash <- x[1]
-  thresh = x[2]
-  k = x[3]
+  wash <- as.numeric(x[1])
+  thresh = as.numeric(x[2])
+  k = as.numeric(x[3])
   
   if(wash == 7){
     df_use = outbreak_size7day
@@ -323,6 +324,37 @@ Reff_ests <- t(apply(wash_thresh_k,1,function(x){
 }))
 
 Reff_results <- cbind(wash_thresh_k, Reff_ests)
+
+
+#Plot Reff by k with different washouts ---------
+Reff_results %>% 
+  filter(thresh == 10, k > 0.1) %>% 
+  ggplot(aes(x = k, y = Reff, col = as.factor(Wash))) +
+    geom_point() +
+    geom_errorbar(aes(ymin = Reff-Reff_SE,
+                      ymax = Reff+Reff_SE),
+                  width = 0.01) +
+    scale_y_continuous(trans = "log",
+                       breaks = c(1,5,10,50,100,500),
+                       limits = c(0.9,501)) +
+    scale_x_continuous(breaks = seq(0.1,1.0, by = 0.1)) +
+    theme_classic() +
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 16),
+          #plot.title = element_text(size = 18),
+          plot.tag = element_text(size = 20)) +
+    labs(y = expression(R[eff]),
+         x = "k",
+         col = "Washout\nPeriod")
+         #title = expression(Bootstrapped~R[eff]~estimates),
+         #tag = "C.")
+
+ggsave(filename = here::here("Plots/Reff_by_k_by_washout.jpg"),
+       height = 5, width = 7)
+
+# Reff and k estimation accounting for immunity ------------
+# Because many facilities have large outbreaks that occur prior to smaller outbreaks, need to censor outbreaks that may have been restricted by effects of immunity
+
 
 # NP Bootstrap of Reff ---------------------------
 set.seed(430)
