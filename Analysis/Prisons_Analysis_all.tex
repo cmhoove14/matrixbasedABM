@@ -1,0 +1,142 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+  \usepackage{amssymb}
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  pdftitle={Prisons Empirical MRD},
+  pdfauthor={Chris Hoover},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+\urlstyle{same} % disable monospaced font for URLs
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifluatex
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+
+\title{Prisons Empirical MRD}
+\author{Chris Hoover}
+\date{2/18/2021}
+
+\begin{document}
+\maketitle
+
+\hypertarget{methods}{%
+\subsection{Methods}\label{methods}}
+
+COVID-19 data for all state prison facilities operated by the California
+Department of Corrections and Rehabilitation (CDCR) are reported in a
+CDCR
+\href{https://www.cdcr.ca.gov/covid19/population-status-tracking/}{data
+dashboard}. Machine readable timeseries of these daily reports were
+acquired from the
+\href{https://github.com/uclalawcovid19behindbars}{UCLA COVID Behind
+Bars} project which gathers and organizes COVID 19 data from carceral
+facilities across the United States, including CDCR. Empirical analyses
+described below utilize data on cumulative active cases reported
+separately for residents and staff for each facility. Time series of
+incident cases were derived by taking the daily difference of reported
+cumulative cases and removing anomalies such as negative case counts.
+
+\hypertarget{definining-outbreaks}{%
+\subsubsection{Definining outbreaks}\label{definining-outbreaks}}
+
+Outbreaks were defined in each facility as an increase in incident cases
+among residents following a wash out period in which no incident cases
+occurred. We chose a washout period of 10 days, approximately double the
+estimated serial interval for COVID 19 according to a recent systematic
+review
+\href{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7448781/\#:~:text=The\%20pooled\%20estimate\%20of\%20serial,SD\%20\%3D\%203.8}{CITE}\%20days\%5D.).
+Wash out periods of 7 and 14 days were also used in sensitivity
+analyses.
+
+\hypertarget{estimating-r_eff-from-outbreak-size-distribution}{%
+\subsubsection{\texorpdfstring{Estimating \(R_{eff}\) from outbreak size
+distribution}{Estimating R\_\{eff\} from outbreak size distribution}}\label{estimating-r_eff-from-outbreak-size-distribution}}
+
+\begin{verbatim}
+## Warning: Removed 28 row(s) containing missing values (geom_path).
+\end{verbatim}
+
+\includegraphics{Prisons_Analysis_all_files/figure-latex/plot_outbreak_ts-1.pdf}
+
+\begin{verbatim}
+## `summarise()` ungrouping output (override with `.groups` argument)
+## `summarise()` ungrouping output (override with `.groups` argument)
+## `summarise()` ungrouping output (override with `.groups` argument)
+## `summarise()` ungrouping output (override with `.groups` argument)
+## `summarise()` ungrouping output (override with `.groups` argument)
+## `summarise()` ungrouping output (override with `.groups` argument)
+\end{verbatim}
+
+\includegraphics{Prisons_Analysis_all_files/figure-latex/plot_outbreak_size_distn-1.pdf}
+
+\includegraphics{Prisons_Analysis_all_files/figure-latex/est_Reff_fixed_k-1.pdf}
+
+\begin{verbatim}
+## $x
+## expression(R[eff] ~ estimate)
+## 
+## $y
+## [1] "Frequency"
+## 
+## attr(,"class")
+## [1] "labels"
+\end{verbatim}
+
+\begin{verbatim}
+##      25%               75% 
+## 4.524119 4.871530 5.295209
+\end{verbatim}
+
+\end{document}

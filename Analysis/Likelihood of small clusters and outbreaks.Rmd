@@ -1,0 +1,88 @@
+---
+title: "Inference of reproduction number and dispersion parameter from stochastic component of outbreak dynamics"
+author: "Seth Blumberg"
+date: "2/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The likelihood of $i$ infections causing $j$ infections is
+\begin{equation}
+l_{i \to j}(R_\mathrm{eff}, k) = \frac{\Gamma(j + ki)}{\Gamma(j+1)\Gamma(ki)}\left(\frac{k}{R_\mathrm{eff}+k}\right)^{ki}\left(\frac{R_\mathrm{eff}}{R_\mathrm{eff}+k}\right)^j. \label{eqn:gg}
+\end{equation}
+
+The likelihood of one infection causing a cluster of size $j$ is
+\begin{equation}
+l^C_{1\to j}(R_\mathrm{eff}, k) = \frac{1}{j}l_{j\to j-1}(R_\mathrm{eff}, k).
+\end{equation}
+
+The following code simulates a bunch of introductions:
+
+```
+#Simulate clusters that occur after an introduction
+#Outputs is a table theat lists the number of clusters of an individual size, and the numeber that lead to full blow outbreaks (last row of output)
+#Inputs are:
+#   the reproduciton number (R)
+#   the dispersion parameter (k)
+#   the size at which point an outbreak is deemed to occur (thresh)
+#   the number of introductions to simulate (number)
+sim_cluster <-function(R,k,thresh,number) {
+  all_sizes <- tibble(i = 1:number) %>% group_by(i) %>% do({
+    num_inf <- 1
+    cluster_size <- 1
+    while (num_inf > 0) {
+      num_inf <- sum(rnbinom(num_inf,size = k, mu = R))
+      cluster_size <- cluster_size + num_inf
+      if(cluster_size > thresh) {
+        cluster_size <- thresh + 1e10
+        num_inf <- 0
+      }
+    }
+    tibble(cluster_size = cluster_size)
+  })
+  all_sizes %>% group_by(cluster_size) %>% summarize(n = n())
+}
+```
+And this code computes the likelhood of simulated or observed data for given R and k
+```
+# prob that i cases cause j cases
+calc_r_ij <- function (i,j,r,k) {
+  log_r_ij <- lgamma(j +k*i) - lgamma(j+1) - lgamma(k*i) + 
+    k * i * log(k/(r+k)) +
+    j * log(r/(r+k))
+  r_ij<- exp(log_r_ij)
+}
+
+# Likelihood of data
+#
+# thresh denotes the size cutoff that determines when a cluster becomes an outbreak.
+# c_j_arr = probability of having a cluster of size j
+calc_cluster_logL <- function(data, thresh, R, k) {
+  cluster_size <- 1:thresh
+  c_j_arr <- calc_r_ij(i=cluster_size,j=cluster_size-1,R,k)/cluster_size
+  cluster_size[thresh+1] <- thresh + 1
+  c_j_arr[thresh+1] <- 1-sum(c_j_arr)
+  prob_arr <- tibble(cluster_size = cluster_size, prob = c_j_arr)
+  
+  # Truncate right tail
+  data$cluster_size <- ifelse(data$cluster_size > thresh,thresh+1, data$cluster_size)
+
+  #Do log L
+  data <- left_join(data,prob_arr,by = 'cluster_size')
+  logL <- sum(data$n * log(data$prob))
+}
+```
+Some ideas for turning this into a manuscript.
+\begin{itemize}
+\item
+To show inference is self-consistent and parameters are identifiable, do a bunch of inferences on simulated data (i.e. minimize likelihood and show confidence intervals are calibrated).
+\item
+To show applicability, apply to a variety of data sets as we can find (prison, nursing homes, etc)
+\item
+To evaluate robustness, explore how well inference does if you just know number of isolated cases, number of self-contained clusters (e.g. size > 1, but not an outbreak) and number of outbreaks. May also want to plot probability of isolated casse, probability of self-contained cluster and probability of outbreak as function of R and k.
+\item
+To evaluate impact of bias, evaluate how well inference works for different types of observation bias
+\end{itemize}

@@ -1,0 +1,49 @@
+---
+title: "SNFs Outbreaks R estimation"
+author: "Chris Hoover"
+date: "2/23/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r dat}
+snfs <- read_csv(here::here("data/raw/data_gov_SNFs_2021-01-26.csv"))
+```
+
+```{r outbreaks}
+# 10 day washout period 
+snf_outbreaks_10d <- snfs %>% 
+  group_by(facility_id) %>% 
+  arrange(as_of_date) %>% #View()
+  mutate( # Identify outbreaks as new cases emerging following 10 days with no cases
+    new_cases_na_rmv = replace_na(new_resident_cases, 0),
+    New_Residents_Confirmed_7day = zoo::rollapply(
+      data = new_cases_na_rmv,
+      width = 7,
+      FUN = mean,
+      na.rm = T,
+      fill = NA,
+      align = "right"
+    ),
+    new_cases_10day = zoo::rollsum(new_cases_na_rmv, k = 10, 
+                                   na.pad = T, align = "right"),
+    new_cases_10day_lead1 = lead(new_cases_10day),
+    outbreak_start = if_else(new_cases_10day == 0 & new_cases_10day_lead1 > 0, 1, 0),
+    # Give each outbreak a unique identifier
+    outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
+    Facility_Outbreak = paste0(facility_id, "_", outbreak_num),
+    plot7day_cases = if_else(new_cases_10day == 0, NA_real_, New_Residents_Confirmed_7day)
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(outbreak_num) & outbreak_num > 0)
+
+outbreak_size10d <- snf_outbreaks_10d %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(new_cases_na_rmv))
+
+hist(outbreak_size10d$outbreak_size, breaks = 30)
+```
+
