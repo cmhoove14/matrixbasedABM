@@ -156,7 +156,13 @@ outbreaks_df7day <- dat %>%
     plot7day_cases = if_else(new_cases_7day == 0, NA_real_, New_Residents_Confirmed_7day)
   ) %>% 
   ungroup() %>% 
-  filter(!is.na(outbreak_num) & outbreak_num > 0)
+  filter(!is.na(outbreak_num) & outbreak_num > 0) %>% 
+  group_by(Facility) %>% 
+  mutate(
+    # For censoring outbreaks with high prior case counts (high chance of effects of immunity)
+    Cum_Residents_Confirmed_rmv_neg = cumsum(New_Residents_Confirmed_rmv_neg),
+    Cum_attack_rate = Cum_Residents_Confirmed_rmv_neg/N0
+  )
 
 
 
@@ -175,7 +181,13 @@ outbreaks_df10day <- dat %>%
     plot7day_cases = if_else(new_cases_10day == 0, NA_real_, New_Residents_Confirmed_7day)
   ) %>% 
   ungroup() %>% 
-  filter(!is.na(outbreak_num) & outbreak_num > 0)
+  filter(!is.na(outbreak_num) & outbreak_num > 0) %>% 
+  group_by(Facility) %>% 
+  mutate(
+    # For censoring outbreaks with high prior case counts (high chance of effects of immunity)
+    Cum_Residents_Confirmed_rmv_neg = cumsum(New_Residents_Confirmed_rmv_neg),
+    Cum_attack_rate = Cum_Residents_Confirmed_rmv_neg/N0
+  )
 
 
 
@@ -191,11 +203,16 @@ outbreaks_df14day <- dat %>%
     # Give each outbreak a unique identifier
     outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
     Facility_Outbreak = paste0(Facility, " Outbreak ", outbreak_num),
-    plot7day_cases = if_else(new_cases_14day == 0, NA_real_, New_Residents_Confirmed_7day)
+    plot7day_cases = if_else(new_cases_14day == 0, NA_real_, New_Residents_Confirmed_7day),
   ) %>% 
   ungroup() %>% 
-  filter(!is.na(outbreak_num) & outbreak_num > 0)
-
+  filter(!is.na(outbreak_num) & outbreak_num > 0) %>% 
+  group_by(Facility) %>% 
+  mutate(
+    # For censoring outbreaks with high prior case counts (high chance of effects of immunity)
+    Cum_Residents_Confirmed_rmv_neg = cumsum(New_Residents_Confirmed_rmv_neg),
+    Cum_attack_rate = Cum_Residents_Confirmed_rmv_neg/N0
+  )
 
 # Plot time series with outbreaks delineated -----------------------
 outbreaks_10d_wash_plot <- outbreaks_df10day %>% 
@@ -355,6 +372,99 @@ ggsave(filename = here::here("Plots/Reff_by_k_by_washout.jpg"),
 # Reff and k estimation accounting for immunity ------------
 # Because many facilities have large outbreaks that occur prior to smaller outbreaks, need to censor outbreaks that may have been restricted by effects of immunity
 
+# Test method for censoring
+cens_levels <- lapply(c(0.25,0.5,0.75,1.0), function(x){
+  outbreaks_df10day %>% 
+    filter(Cum_attack_rate < x) %>% 
+    group_by(Facility_Outbreak) %>% 
+    summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg)) %>% 
+    mutate(outbreak_size_thresh = if_else(outbreak_size > 10, 10, outbreak_size))
+})
+
+
+wash_thresh_k_cens <- expand.grid("Wash" = c(7,10,14),
+                                  "thresh" = 10,
+                                  "k" = seq(0.2,1.0,by = 0.1),
+                                  "cens" = c(0.25, 0.5, 0.75, 1.0))
+
+
+Reff_ests_censored <- t(apply(wash_thresh_k_cens,1,function(x){
+  wash             <- as.numeric(x[1])
+  thresh           <- as.numeric(x[2])
+  k                <- as.numeric(x[3])
+  attack_rate_cens <- as.numeric(x[4]) 
+  
+  if(wash == 7){
+    df_use = outbreaks_df7day %>% 
+      filter(Cum_attack_rate < attack_rate_cens) %>% 
+      group_by(Facility_Outbreak) %>% 
+      summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+  } else if(wash == 10){
+    df_use = outbreaks_df10day %>% 
+      filter(Cum_attack_rate < attack_rate_cens) %>% 
+      group_by(Facility_Outbreak) %>% 
+      summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+  } else if(wash == 14){
+    df_use = outbreaks_df14day %>% 
+      filter(Cum_attack_rate < attack_rate_cens) %>% 
+      group_by(Facility_Outbreak) %>% 
+      summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+  } else {
+    NULL
+  }
+  
+  outbreak_uppercut <- df_use %>% 
+    mutate(cluster_size = if_else(outbreak_size > thresh, thresh+1, outbreak_size)) %>% 
+    group_by(cluster_size) %>% 
+    summarise(n = n(), .groups = 'drop')
+  
+  Reff_est <- reff_find(R_INIT = log(2),
+                        K_est = k,
+                        DATA = outbreak_uppercut, 
+                        THRESH = thresh)
+  
+  return(c("Reff" = exp(Reff_est$logPars[1]),
+           "Reff_SE" = exp(Reff_est$SEs[1])))
+  
+}))
+
+Reff_results_cens <- cbind(wash_thresh_k_cens, Reff_ests_censored)
+
+#Check that uncensored results equivalent to previous estimates
+Reff_results_uncensored <- Reff_results_cens %>%
+  filter(cens == 1.0) %>% 
+  left_join(Reff_results, by = c("Wash", "thresh", "k"))
+
+# Not perfect match because some facilities attack rates messed up based on population shifts, but close enough
+
+#Plot Reff by k with different washouts ---------
+Reff_results_cens %>% 
+  filter(thresh == 10, k > 0.1) %>% 
+  ggplot(aes(x = k, y = Reff, col = as.factor(Wash), shape = as.factor(cens))) +
+  geom_point(position = position_dodge(0.05)) +
+  geom_errorbar(aes(ymin = Reff-Reff_SE,
+                    ymax = Reff+Reff_SE),
+                width = 0.01,
+                position = position_dodge(0.05)) +
+  #facet_wrap(.~cens) +
+  scale_y_continuous(trans = "log",
+                     breaks = c(1,5,10,50,100,500),
+                     limits = c(0.9,501)) +
+  scale_x_continuous(breaks = seq(0.1,1.0, by = 0.1)) +
+  theme_classic() +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        #plot.title = element_text(size = 18),
+        plot.tag = element_text(size = 20)) +
+  labs(y = expression(R[eff]),
+       x = "k",
+       col = "Washout\nPeriod",
+       shape = "Attack\nrate\ncensor")
+#title = expression(Bootstrapped~R[eff]~estimates),
+#tag = "C.")
+
+ggsave(filename = here::here("Plots/Reff_by_k_by_washout_by_cens.jpg"),
+       height = 5, width = 7)
 
 # NP Bootstrap of Reff ---------------------------
 set.seed(430)
