@@ -35,10 +35,11 @@ cumsum_diffs <- function(vec1, vec2, vec3){
 
 # See data/get for scripts to get and process data from online sources
 
-uclabb <- read_csv(here::here("data", "raw", "ucla_law_covid_behind_bars2021-02-02.csv")) %>% 
+uclabb <- read_csv(here::here("data", "raw", "ucla_law_covid_behind_bars2021-03-18.csv")) %>% 
   dplyr::select(-(Is.Different.Operator:Source.Capacity)) %>% 
-  filter(Date >= as.Date("2020-04-01"))
-pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2021-02-02.rds")) %>% 
+  filter(Date >= as.Date("2020-04-01"),
+         Jurisdiction == "state")
+pop_sps <- readRDS(here::here("data", "derived", "cdcr_population_ts_2021-03-18.rds")) %>% 
   mutate(dplyr::across(.cols = c("Capacity", "Design_Capacity", "Percent_Occupied", "Staffed_Capacity"),
                 .fns = as.numeric))
 
@@ -50,14 +51,14 @@ facility_lookup_table <- data.frame(Facility_pop = pop_facs,
                                     Facility_case = NA)
 
 # Match facility names
-facility_lookup_table <- bind_rows(lapply(
-  case_facs, function(f){
+facility_lookup_table <- bind_rows(
+  lapply(case_facs, function(f){
     init_grep <- grepl(f, pop_facs, ignore.case = T)
-    
-    return(list("Facility_pop" = pop_facs[which(init_grep)],
+    cat(f, sum(init_grep),"\n")
+    return(list("Facility_pop" = pop_facs[which(init_grep)][sum(init_grep)],
                 "Facility_case" = f))
-  }
-))
+  })
+)
 
 # Remove duplicates that arise due to partial matching
 facility_lookup_table <- facility_lookup_table[!duplicated(facility_lookup_table$Facility_pop),]
@@ -73,6 +74,10 @@ facility_lookup_table <- rbind(facility_lookup_table,
 
 # Should be 0 if all matched
 pop_facs[!pop_facs %in% facility_lookup_table$Facility_pop]
+
+#Visual check
+View(facility_lookup_table)
+
 
 # Merge datasets -----------------
 #Folsom State Prison has both male and female populationsin the population dataset, but the cases are reported facility wide. Unclear whether the case reporting is for both facilities or only for the male facility, but will assume they're facility-wide and therefore just merge the population data for Folsom
