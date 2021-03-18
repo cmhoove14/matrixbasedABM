@@ -1,5 +1,19 @@
 library(data.table)
 library(tidyverse)
+
+# Get county fips codes ~~~~~~~~~~~~~~~~~~~~~~~~~---------------------------
+temp.file <- paste(tempfile(),".xlsx",sep = "")
+download.file("https://www2.census.gov/programs-surveys/popest/geographies/2018/all-geocodes-v2018.xlsx", 
+              temp.file, mode = "wb")
+
+fips <- readxl::read_excel(temp.file, skip = 4)
+  ca_cnty_fips <- fips %>% 
+    filter(`State Code (FIPS)` == "06" &
+             `County Code (FIPS)` != "000") %>% 
+    mutate(County = `Area Name (including legal/statistical area description)`,
+           fips = paste0(`State Code (FIPS)`, `County Code (FIPS)`)) %>% 
+    dplyr::select(County, fips)
+  ca_cnty_fips_dt <- as.data.table(ca_cnty_fips)
   
 # Get case data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~---------------------------
   system(paste0("curl -o ", here::here("data", "raw", "CA_cases"), Sys.Date(), ".csv " ,
@@ -11,6 +25,10 @@ library(tidyverse)
   CA_cases_dt <- as.data.table(CA_cases)
   CA_cases_dt[, County := paste0(area, " County")]
 
+  CA_cases_dt2 <- merge(CA_cases_dt, ca_cnty_fips_dt, by = "County")
+    CA_cases_dt2$date <- as.Date(CA_cases_dt2$date)
+  CA_cases_dt2 <- CA_cases_dt2[!is.na(date),]
+    
 # Save ------------------
-  saveRDS(CA_cases_dt, here::here("data", "derived", paste0("CA_Cases_Pops", Sys.Date(), ".rds")))  
+  saveRDS(CA_cases_dt2, here::here("data", "derived", paste0("CA_Cases_Pops", Sys.Date(), ".rds")))  
     
