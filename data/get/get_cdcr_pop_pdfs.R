@@ -9,7 +9,8 @@ target_year <- "2021/"
 
 #start_date <- as.Date("2020-01-01")
 #end_date   <- as.Date("2020-12-31")
-start_date <- as.Date("2021-01-06")
+#start_date <- as.Date("2021-01-06")
+start_date <- as.Date("2021-02-03")
 end_date   <- Sys.Date()
 
 interval   <- 7
@@ -35,6 +36,12 @@ get_dates  <- seq.Date(start_date, end_date, interval)
     # Website has sept 30 file in october folder (10) for some reason
     get_month_file <- ifelse(target_date == as.Date("2020-09-30"),
                              "10",
+                             get_month)
+    
+    # Website has These feb files in marh folder (03) for some reason
+    get_month_file <- ifelse(target_date %in% c(as.Date("2021-02-10"),
+                                                as.Date("2021-02-17")),
+                             "03",
                              get_month)
     
     get_url <- paste0(base_url, target_year, 
