@@ -4,3 +4,5 @@
 .Ruserdata
 Admin
 data/derived/Rt_estimates.rds
+.DS_Store
+data/.DS_Store
