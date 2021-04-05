@@ -67,7 +67,8 @@ pdf_to_table <- function(pdf_file){
 }
 
 
-fin_pop_dat <- bind_rows(lapply(pdf_files, pdf_to_table))  
+fin_pop_dat <- bind_rows(lapply(pdf_files, pdf_to_table)) %>% 
+  mutate(Fac_Code = gsub(".*\\((.*)\\).*", "\\1", Facility))
                 
 saveRDS(fin_pop_dat, 
         paste0(here::here("data", "derived"), "/cdcr_population_ts_", Sys.Date(),".rds"))
