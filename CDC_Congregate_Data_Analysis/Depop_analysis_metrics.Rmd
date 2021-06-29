@@ -1,0 +1,173 @@
+---
+title: "Prison metrics"
+author: "Chris Hoover et al"
+date: "4/26/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+
+library(tidyverse)
+```
+
+```{r data}
+# Data -----------------
+dat           <- readRDS(here::here("data/derived/state_prisons_pop_cases_fin2021-03-18.rds"))
+
+# NAs in county FIPS causing join to fill in NAs, so need to make sure all obs have proper county fips
+dat_lookup_fips <- dat %>% filter(Date == "2020-04-01") %>% dplyr::select(Facility, County.FIPS)
+
+dat <- dat %>% 
+  left_join(dat_lookup_fips,
+            by = "Facility",
+            suffix = c(".x","")) %>% 
+  dplyr::select(-County.FIPS.x)
+
+CA_cases_pops <- readRDS(here::here("data/derived/CA_Cases_Pops2021-03-18.rds")) %>% 
+  group_by(County) %>% 
+  # Add measures of cumulative prevalence
+  mutate(cum_cases_7day = zoo::rollsum(cases, k =7,
+                                       align = "right", na.pad = T),
+         prev_7day = cum_cases_7day/population,
+         prev_7day_p100k = prev_7day*1e5,
+         cum_cases_14day = zoo::rollsum(cases, k =14,
+                                        align = "right", na.pad = T),
+         prev_14day = cum_cases_14day/population,
+         prev_14day_p100k = prev_14day*1e5) %>% 
+  ungroup()
+
+dat_case_pop_merge <- dat %>% 
+  left_join(CA_cases_pops %>% mutate(County.FIPS = as.numeric(fips)),
+            by = c("County.FIPS" = "County.FIPS",
+                   "Date" = "date"),
+            suffix = c(".x",""))
+```
+
+# Cases following introductions  
+
+```{r ob_define_fig}
+# define_outbreaks -----------------
+# 14 day washout period      
+outbreaks_df14day <- dat_case_pop_merge %>% 
+  dplyr::select(-c(Residents.Recovered:New_Staff_Deaths, Residents.Tadmin:fips)) %>%
+  group_by(Facility) %>% 
+  mutate( # Identify outbreaks as new cases emerging following 14 days with no cases
+    New_Residents_Confirmed_rmv_neg = if_else(Date == as.Date("2020-04-01"), 0, New_Residents_Confirmed_rmv_neg), #Remove NA on first obs day
+    new_cases_14day = zoo::rollsum(New_Residents_Confirmed_rmv_neg, k = 14, 
+                                   na.pad = T, align = "right"),
+    new_cases_14day_lead1 = lead(new_cases_14day),
+    outbreak_start = if_else(new_cases_14day == 0 & new_cases_14day_lead1 > 0, 1, 0),
+    # Give each outbreak a unique identifier
+    outbreak_num = cumsum(if_else(is.na(outbreak_start), 0, outbreak_start)) + outbreak_start*0,
+    Facility_Outbreak = paste0(Facility, " Outbreak ", outbreak_num),
+    plot7day_cases = if_else(new_cases_14day == 0, NA_real_, New_Residents_Confirmed_7day),
+    # For censoring outbreaks with high prior case counts (high chance of effects of immunity)
+    Cum_Residents_Confirmed_rmv_neg = cumsum(New_Residents_Confirmed_rmv_neg),
+    Cum_attack_rate = Cum_Residents_Confirmed_rmv_neg/N0,
+    Ns = N0 - Cum_Residents_Confirmed_rmv_neg
+  ) %>% 
+  ungroup()
+
+# Plot time series with outbreaks delineated -----------------------
+#Facilities with at least three outbreaks
+g5_ob_facs <- outbreaks_df14day %>% 
+  group_by(Facility) %>% 
+  summarise(n_obs = max(outbreak_num, na.rm = T)) %>% 
+  filter(n_obs >= 5) %>% 
+  pull(Facility)
+
+outbreaks_14d_wash_plot <- outbreaks_df14day %>% 
+  filter(!is.na(outbreak_num),
+         Facility %in% g5_ob_facs,
+         outbreak_num > 0) %>% 
+  mutate(Facility2 = str_remove(unlist(str_split(Facility, pattern = "\\("))[seq(2,nrow(.)*2, by=2)], pattern = "\\)")) %>% 
+  ggplot() +
+  geom_line(aes(x = Date, y = plot7day_cases, col = as.factor(outbreak_num))) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 315, hjust = 0, size = 8),
+        axis.title = element_text(size = 14),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA)) +
+  scale_y_continuous(trans = "log1p",
+                     breaks = c(1,10,100,1000)) +
+  scale_x_date(date_labels = "%b'%y") +
+  facet_wrap(facets = "Facility2",
+             nrow = 2, ncol = 5) +
+  labs(y = "7-day average of incident resident cases",
+       col = "Introduction")
+
+outbreaks_14d_wash_plot
+
+ggsave(here::here("Plots/Outbreaks_5min.png"),
+       height = 4, width = 6, units = "in")
+```
+
+# Occupancies  
+## All facilities  
+```{r avg_pop_fig, fig.height=3, fig.width=5, fig.cap="Mean facility population size across all California state prison facilities. Shaded region indicates max and min while solid line represents the mean."}
+pop_dat <- dat %>% 
+  group_by(Date) %>% 
+  summarise(avg_pop = mean(Nt),
+            max_pop = max(Nt),
+            min_pop = min(Nt))
+
+avg_start <- pop_dat$avg_pop[which(pop_dat$Date == min(pop_dat$Date))]
+avg_end <- pop_dat$avg_pop[which(pop_dat$Date == (max(pop_dat$Date)-5))]
+
+pop_dat %>% 
+  ggplot(aes(x = Date, y = avg_pop, ymin = max_pop, ymax = min_pop)) +
+    geom_line() +
+    geom_ribbon(alpha = 0.2) +
+    theme_classic() +
+    labs(x = "Date",
+         y = "Facility populations")
+```
+
+Average occupancy across all prison facilities was `r round(avg_start)` as of `r min(pop_dat$Date)`, but had decreased to `r round(avg_end)` as of `r (max(pop_dat$Date)-5)`.
+
+## Facilities shown in figure (with at least five introductions)  
+```{r avg_pop_fig_g5_ob, fig.height=3, fig.width=5, fig.cap="Mean facility population size across California state prison facilities with at least 5 introductions. Shaded region indicates max and min while solid line represents the mean."}
+pop_dat_g5_ob <- dat %>% 
+  filter(Facility %in% g5_ob_facs) %>% 
+  group_by(Date) %>% 
+  summarise(avg_pop = mean(Nt),
+            max_pop = max(Nt),
+            min_pop = min(Nt))
+
+avg_start_g5_ob <- pop_dat_g5_ob$avg_pop[which(pop_dat_g5_ob$Date == min(pop_dat_g5_ob$Date))]
+avg_end_g5_ob <- pop_dat_g5_ob$avg_pop[which(pop_dat_g5_ob$Date == (max(pop_dat_g5_ob$Date)-5))]
+
+pop_dat_g5_ob %>% 
+  ggplot(aes(x = Date, y = avg_pop, ymin = max_pop, ymax = min_pop)) +
+    geom_line() +
+    geom_ribbon(alpha = 0.2) +
+    theme_classic() +
+    labs(x = "Date",
+         y = "Facility populations")
+```
+
+Average occupancy across  prison facilities with at least five introductions was `r round(avg_start_g5_ob)` as of `r min(pop_dat_g5_ob$Date)`, but had decreased to `r round(avg_end_g5_ob)` as of `r (max(pop_dat_g5_ob$Date)-5)`.
+
+# Introduction rate  
+## All facilities  
+```{r intros}
+n_days <- length(unique(dat$Date))
+
+n_facs <- length(unique(dat$Facility))
+
+n_intros <- length(unique(outbreaks_df14day$Facility_Outbreak))
+```
+
+Across `r n_days` of observation of `r n_facs` facilities, there were `r n_intros` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros/n_facs/n_days, 3)` introductions per facility per day.
+
+## Facilities shown in figure (with at least five introductions)  
+```{r intros_g5_ob}
+n_days_g5_ob <- length(unique(dat$Date[which(dat$Facility %in% g5_ob_facs)]))
+
+n_facs_g5_ob <- length(unique(dat$Facility[which(dat$Facility %in% g5_ob_facs)]))
+
+n_intros_g5_ob <- length(unique(outbreaks_df14day$Facility_Outbreak[which(dat$Facility %in% g5_ob_facs)]))
+```
+
+Across `r n_days_g5_ob` of observation of `r n_facs_g5_ob` facilities, there were `r n_intros_g5_ob` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros_g5_ob/n_facs_g5_ob/n_days_g5_ob, 3)` introductions per facility per day.
