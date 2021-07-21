@@ -159,7 +159,7 @@ n_facs <- length(unique(dat$Facility))
 n_intros <- length(unique(outbreaks_df14day$Facility_Outbreak))
 ```
 
-Across `r n_days` of observation of `r n_facs` facilities, there were `r n_intros` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros/n_facs/n_days, 3)` introductions per facility per day.
+Across `r n_days` days of observation of `r n_facs` facilities, there were `r n_intros` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros/n_facs/n_days, 3)` introductions per facility per day.
 
 ## Facilities shown in figure (with at least five introductions)  
 ```{r intros_g5_ob}
@@ -170,4 +170,4 @@ n_facs_g5_ob <- length(unique(dat$Facility[which(dat$Facility %in% g5_ob_facs)])
 n_intros_g5_ob <- length(unique(outbreaks_df14day$Facility_Outbreak[which(dat$Facility %in% g5_ob_facs)]))
 ```
 
-Across `r n_days_g5_ob` of observation of `r n_facs_g5_ob` facilities, there were `r n_intros_g5_ob` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros_g5_ob/n_facs_g5_ob/n_days_g5_ob, 3)` introductions per facility per day.
+Across `r n_days_g5_ob` days of observation of `r n_facs_g5_ob` facilities, there were `r n_intros_g5_ob` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros_g5_ob/n_facs_g5_ob/n_days_g5_ob, 3)` introductions per facility per day.

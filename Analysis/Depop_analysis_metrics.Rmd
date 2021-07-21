@@ -156,10 +156,14 @@ n_days <- length(unique(dat$Date))
 
 n_facs <- length(unique(dat$Facility))
 
-n_intros <- length(unique(outbreaks_df14day$Facility_Outbreak))
+n_intros <- outbreaks_df14day %>% 
+  filter(outbreak_num > 0) %>% 
+  pull(Facility_Outbreak) %>% 
+  unique() %>% 
+  length()
 ```
 
-Across `r n_days` of observation of `r n_facs` facilities, there were `r n_intros` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros/n_facs/n_days, 3)` introductions per facility per day.
+Across `r n_days` days of observation of `r n_facs` facilities, there were `r n_intros` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros/n_facs/n_days, 3)` introductions per facility per day.
 
 ## Facilities shown in figure (with at least five introductions)  
 ```{r intros_g5_ob}
@@ -167,7 +171,98 @@ n_days_g5_ob <- length(unique(dat$Date[which(dat$Facility %in% g5_ob_facs)]))
 
 n_facs_g5_ob <- length(unique(dat$Facility[which(dat$Facility %in% g5_ob_facs)]))
 
-n_intros_g5_ob <- length(unique(outbreaks_df14day$Facility_Outbreak[which(dat$Facility %in% g5_ob_facs)]))
+n_intros_g5_ob <- outbreaks_df14day %>% 
+  filter(Facility %in% g5_ob_facs, outbreak_num > 0) %>% 
+  pull(Facility_Outbreak) %>% 
+  unique() %>% 
+  length()
+  
 ```
 
-Across `r n_days_g5_ob` of observation of `r n_facs_g5_ob` facilities, there were `r n_intros_g5_ob` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros_g5_ob/n_facs_g5_ob/n_days_g5_ob, 3)` introductions per facility per day.
+Across `r n_days_g5_ob` days of observation of `r n_facs_g5_ob` facilities, there were `r n_intros_g5_ob` introductions, defined as a new resident case following a 14-day washout period with no resident cases, giving a rate of `r round(n_intros_g5_ob/n_facs_g5_ob/n_days_g5_ob, 3)` introductions per facility per day.
+
+# Outbreak rate  
+
+## All facilities  
+```{r ob_rate_all_facilities}
+outbreak_size14day <- outbreaks_df14day %>% 
+  filter(outbreak_num > 0) %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+
+# Define upper cutoff for outbreak ----------------
+upper_cutoff1 <- 10
+
+outbreak_size14day_10uppercut <- outbreak_size14day %>% 
+  mutate(outbreak_size_uppercut = if_else(outbreak_size > upper_cutoff1, upper_cutoff1+1, outbreak_size)) %>% 
+  group_by(outbreak_size_uppercut) %>% 
+  summarise(n_ob = n())
+
+
+# Plot outbreak size distribution with upper cutoff-------------------
+outbreak_size_distn <- outbreak_size14day_10uppercut %>% 
+  ggplot(aes(x = outbreak_size_uppercut, y = n_ob)) +
+    geom_col() +
+    geom_col(data = outbreak_size14day_10uppercut %>% filter(outbreak_size_uppercut == (upper_cutoff1+1)),
+             fill = "darkred") +
+    theme_classic() +
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 16)) +
+    scale_x_continuous(breaks = c(1:(upper_cutoff1+1)),
+                       labels = c(as.character(c(1:(upper_cutoff1))),
+                                  paste0(">", upper_cutoff1))) +
+    labs(x = "Outbreak size (number of confirmed cases)",
+         y = "Frequency",
+         title = "Outbreak size distribution with 14-day washout")
+    
+outbreak_size_distn
+
+ob_size1 <- outbreak_size14day_10uppercut %>% filter(outbreak_size_uppercut == 1) %>% pull(n_ob)
+
+ob_size11 <- outbreak_size14day_10uppercut %>% filter(outbreak_size_uppercut == 11) %>% pull(n_ob)
+
+```
+
+## Facilities shown in figure (with at least five introductions)  
+
+Of `r n_intros` introductions, `r ob_size1` (`r round(ob_size1/n_intros, 2)*100`%) resulted in no onward transmission and `r ob_size11` (`r round(ob_size11/n_intros, 2)*100`%) resulted in outbreaks of more than ten resident cases.
+
+```{r ob_rate_g5obs_fac}
+outbreak_size14day_g5ob <- outbreaks_df14day %>% 
+  filter(Facility %in% g5_ob_facs, outbreak_num > 0) %>% 
+  group_by(Facility_Outbreak) %>% 
+  summarise(outbreak_size = sum(New_Residents_Confirmed_rmv_neg))
+
+
+outbreak_size14day_10uppercut_g5ob <- outbreak_size14day_g5ob %>% 
+  mutate(outbreak_size_uppercut = if_else(outbreak_size > upper_cutoff1, upper_cutoff1+1, outbreak_size)) %>% 
+  group_by(outbreak_size_uppercut) %>% 
+  summarise(n_ob = n())
+
+
+# Plot outbreak size distribution with upper cutoff-------------------
+outbreak_size_distn_g5ob <- outbreak_size14day_10uppercut_g5ob %>% 
+  ggplot(aes(x = outbreak_size_uppercut, y = n_ob)) +
+    geom_col() +
+    geom_col(data = outbreak_size14day_10uppercut_g5ob %>% filter(outbreak_size_uppercut == (upper_cutoff1+1)),
+             fill = "darkred") +
+    theme_classic() +
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 16)) +
+    scale_x_continuous(breaks = c(1:(upper_cutoff1+1)),
+                       labels = c(as.character(c(1:(upper_cutoff1))),
+                                  paste0(">", upper_cutoff1))) +
+    labs(x = "Outbreak size (number of confirmed cases)",
+         y = "Frequency",
+         title = "Outbreak size distribution with 14-day washout",
+         subtitle = "Among facilities with at least 5 introductions")
+    
+outbreak_size_distn_g5ob
+
+g5_ob_size1 <- outbreak_size14day_10uppercut_g5ob %>% filter(outbreak_size_uppercut == 1) %>% pull(n_ob)
+
+g5_ob_size11 <- outbreak_size14day_10uppercut_g5ob %>% filter(outbreak_size_uppercut == 11) %>% pull(n_ob)
+
+```
+
+Of `r n_intros_g5_ob` introductions, `r g5_ob_size1` (`r round(g5_ob_size1/n_intros_g5_ob, 2)*100`%) resulted in no onward transmission and `r g5_ob_size11` (`r round(g5_ob_size11/n_intros_g5_ob, 2)*100`%) resulted in outbreaks of more than ten resident cases.
